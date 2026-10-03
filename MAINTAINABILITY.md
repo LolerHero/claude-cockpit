@@ -41,5 +41,5 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 
 ## Next-move targets
 
-1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 3 → 5 with the CI gate in place.
+1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 4 → 5.
 2. **A release tag** (`v0.1.0`) and a CHANGELOG line per release, so a user can pin a version against a Claude Code build. Moves 9 → 5.
