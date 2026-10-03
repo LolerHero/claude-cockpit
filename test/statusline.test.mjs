@@ -23,7 +23,7 @@ function run({ columns, palette, glyphs, status = {}, settings, payload = PAYLOA
   if (settings !== 'missing') {
     writeFileSync(
       join(cfg, 'settings.json'),
-      settings === 'garbage' ? '{ not json' : JSON.stringify({ pluginConfigs: { cockpit: { palette, glyphs } } }),
+      settings === 'garbage' ? '{ not json' : JSON.stringify({ pluginConfigs: { cockpit: { options: { palette, glyphs } } } }),
     )
   }
   writeFileSync(join(cfg, 'cockpit-status.json'), JSON.stringify({ columns, files: 3, ...status }))
@@ -103,6 +103,28 @@ test('a status file from the private cockpit (extra keys) only yields the file c
   }).replace(ANSI, '')
   assert.doesNotMatch(plain, /vps|obs/)
   assert.match(plain, / 3/)
+})
+
+test("a session reads its own status file, not another session's", () => {
+  // Two sessions open: each mod writes cockpit/<session id>.json; the shared file is the
+  // fallback for a mod that does not (the private cockpit, or an older build).
+  const dir = mkdtempSync(join(tmpdir(), 'cockpit-'))
+  mkdirSync(join(dir, 'cockpit'))
+  writeFileSync(join(dir, 'cockpit', 'sess-a.json'), JSON.stringify({ files: 7, columns: 144 }))
+  writeFileSync(join(dir, 'cockpit', 'sess-b.json'), JSON.stringify({ files: 1, columns: 30 }))
+  writeFileSync(join(dir, 'cockpit-status.json'), JSON.stringify({ files: 3, columns: 30 }))
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: dir }
+  delete env.WEZTERM_PANE
+  const line = id => {
+    const p = { ...PAYLOAD, session_id: id, cwd: dir, workspace: { current_dir: dir, project_dir: dir } }
+    const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(p), env, cwd: dir, encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+    return r.stdout.replace(ANSI, '')
+  }
+  assert.match(line('sess-a'), / 7/)
+  assert.match(line('sess-a'), /Opus 5\.5/) // its own 144 columns, not b's 30
+  assert.match(line('sess-b'), / 1/)
+  assert.match(line('sess-c'), / 3/) // no file of its own: the shared one
 })
 
 test('no status file at all: width falls back to 80 and the file count is omitted', () => {

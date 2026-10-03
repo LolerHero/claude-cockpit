@@ -38,10 +38,11 @@ const readJson = path => {
   }
 }
 
-/** The plugin's options as the config menu stores them; defaults for anything missing or odd. */
+/** The plugin's options as the config menu stores them, under `pluginConfigs[<name>].options`
+ *  (`<name>@inline` for a plugin-dir plugin, per the 2.1.288 types); defaults for anything odd. */
 function options() {
   const s = readJson(join(configDir(), 'settings.json'))
-  const c = s?.pluginConfigs?.cockpit ?? s?.pluginConfigs?.['cockpit@inline'] ?? {}
+  const c = s?.pluginConfigs?.cockpit?.options ?? s?.pluginConfigs?.['cockpit@inline']?.options ?? {}
   return { palette: paletteOf(c.palette), glyphs: c.glyphs === 'plain' ? 'plain' : 'nerd' }
 }
 
@@ -81,9 +82,12 @@ function elapsed(ms) {
 }
 
 /** What the cockpit mod published: the file count and the width it measured. Empty when the mod
- *  has not written yet. Any other key (an older or private cockpit) is ignored. */
-function cockpit() {
-  const c = readJson(join(configDir(), 'cockpit-status.json'))
+ *  has not written yet. Any other key (an older or private cockpit) is ignored.
+ *  This session's own file first (`cockpit/<session id>.json`), so two open sessions do not read
+ *  each other's count or width; the shared `cockpit-status.json` is the fallback. */
+function cockpit(sessionId) {
+  const own = typeof sessionId === 'string' && /^[\w-]+$/.test(sessionId) ? readJson(join(configDir(), 'cockpit', `${sessionId}.json`)) : null
+  const c = own ?? readJson(join(configDir(), 'cockpit-status.json'))
   if (!c) return { parts: [], columns: 0 }
   const parts = typeof c.files === 'number' ? [{ text: paint('subtle', G.files + c.files), prio: 3 }] : []
   return { parts, columns: Number(c.columns) || 0 }
@@ -174,7 +178,7 @@ function main() {
   const ctx = contextBar(payload.context_window)
   if (ctx) left.push({ text: ctx, prio: 9 })
 
-  const cp = cockpit()
+  const cp = cockpit(payload.session_id)
   const right = cp.parts
   const t = elapsed(payload.cost?.total_duration_ms)
   if (t) right.push({ text: paint('muted', G.clock) + paint('subtle', t), prio: 7 })

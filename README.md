@@ -55,7 +55,7 @@ The palette and the glyphs are also options of the `cockpit` plugin in Claude Co
 
 ## How it works
 
-The mod runs inside Claude Code and writes the file count and the terminal width to `~/.claude/cockpit-status.json`. The status line is a separate Node process that reads that file, plus `settings.json` for your options. Both draw from the same `palettes.js`.
+The mod runs inside Claude Code and writes the file count and the terminal width to `~/.claude/cockpit/<session id>.json`, one small file per session, so two open sessions never mix their numbers. The status line is a separate Node process that reads its session's file, plus `settings.json` for your options. Both draw from the same `palettes.js`.
 
 ## Check it
 

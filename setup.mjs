@@ -4,7 +4,7 @@
 //
 // 1. settings.json → statusLine runs statusline/statusline.mjs with this Node
 // 2. settings.json → env.CLAUDE_CODE_PLUGIN_DIRS gains this folder (so the mod loads everywhere)
-// 3. settings.json → pluginConfigs.cockpit.{palette,glyphs} when the flags are given
+// 3. settings.json → pluginConfigs.cockpit.options.{palette,glyphs} when the flags are given
 // 4. keybindings.json → ctrl+x f opens /files, unless the chord is taken
 // Every change is printed as `changed: …`; everything left as is, `kept: …`. settings.json is
 // backed up before the first write. The config dir is CLAUDE_CONFIG_DIR or ~/.claude.
@@ -38,7 +38,8 @@ export function plan({ settings, keybindings, repo, node, flags }) {
   const command = `"${node}" "${repo}/statusline/statusline.mjs"`
   const current = s.statusLine?.command
   if (current === command) lines.push('kept: statusLine already points here')
-  else if (current && !current.includes('statusline.mjs') && !flags.force) {
+  // Ours when it runs this checkout's script, under whatever node; a mere `statusline.mjs` is not.
+  else if (current && !current.includes(`${repo}/statusline/statusline.mjs`) && !flags.force) {
     lines.push(`kept: statusLine is "${current}" — re-run with --force to replace it`)
   } else {
     s.statusLine = { type: 'command', command }
@@ -58,13 +59,14 @@ export function plan({ settings, keybindings, repo, node, flags }) {
   if (flags.palette !== undefined || flags.glyphs !== undefined) {
     s.pluginConfigs ??= {}
     s.pluginConfigs.cockpit ??= {}
+    s.pluginConfigs.cockpit.options ??= {}
     if (flags.palette !== undefined) {
-      s.pluginConfigs.cockpit.palette = flags.palette
-      lines.push(`changed: pluginConfigs.cockpit.palette → ${flags.palette}`)
+      s.pluginConfigs.cockpit.options.palette = flags.palette
+      lines.push(`changed: pluginConfigs.cockpit.options.palette → ${flags.palette}`)
     }
     if (flags.glyphs !== undefined) {
-      s.pluginConfigs.cockpit.glyphs = flags.glyphs
-      lines.push(`changed: pluginConfigs.cockpit.glyphs → ${flags.glyphs}`)
+      s.pluginConfigs.cockpit.options.glyphs = flags.glyphs
+      lines.push(`changed: pluginConfigs.cockpit.options.glyphs → ${flags.glyphs}`)
     }
   }
 

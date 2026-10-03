@@ -101,3 +101,76 @@ test('the pane lists a written image and draws it inline from its base64', async
   expect(tree).toContain('Open shot.png')
   expect(tree).toContain('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
 })
+
+test('a file name outside ASCII is kept whole', () => {
+  expect(pathsIn('wrote /home/u/Rechnung-März.pdf')).toEqual(['/home/u/Rechnung-März.pdf'])
+})
+
+/** Answers the engine calls the module makes, on a disk where every file exists. `mtime` maps a
+ *  file name to its modification time (default: written just now); `asked` records exists() paths. */
+const disk = (on: any, mtime: Record<string, number> = {}, asked: string[] = []) => {
+  const NOW = 1_000_000
+  on('session.cwd', async () => ({ value: CWD }))
+  on('env.get', async () => ({ value: undefined }))
+  on('clock.now', async () => ({ value: NOW }))
+  on('fs.exists', async ($: unknown, e: { path: string }) => {
+    asked.push(e.path)
+    return { value: true }
+  })
+  on('fs.write', async () => ({ value: undefined }))
+  on('fs.stat', async ($: unknown, e: { path: string }) => ({
+    // The engine hands hooks the native, resolved path (`E:\work\README.md`): match by name.
+    value: { kind: 'file', size: 10, mtimeMs: mtime[e.path.split(/[\\/]/).pop() ?? ''] ?? NOW, isLink: false },
+  }))
+  on('fs.read', async () => ({ value: { base64: '' } }))
+}
+
+const drawPane = async ($: any) => {
+  const pane = await $.ui.mount({ plugin: 'cockpit', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'files' })
+  return JSON.stringify(await pane.drawn())
+}
+
+test('a Write is collected at its exact path, spaces and all', async ($, on) => {
+  const asked: string[] = []
+  disk(on, {}, asked)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: 'C:\\Users\\John Smith\\report.pdf', content: 'x' })
+  // Native separators by the time a hook sees it; the point is the space survived, whole.
+  expect(asked.map(p => p.replace(/\\/g, '/'))).toContain('C:/Users/John Smith/report.pdf')
+  expect(await drawPane($)).toContain('Open report.pdf')
+})
+
+test('a file a command only mentions is not collected; one it produced is', async ($, on) => {
+  // `git status` prints README.md, which exists but was not touched: it is not this session's.
+  disk(on, { 'README.md': 0 })
+  on('tool.call', async () => ({
+    result: { content: [{ type: 'text', text: ' M README.md\nwrote /work/out/report.pdf' }] },
+  }))
+  await $.tool.call({ tool: 'Bash', command: 'make report && git status --short', description: 'build the report' })
+  const tree = await drawPane($)
+  expect(tree).toContain('Open report.pdf')
+  expect(tree).not.toContain('README.md')
+})
+
+test('a newest image that is not a PNG gets its button but no inline drawing', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/shot.jpg', content: 'x' })
+  const tree = await drawPane($)
+  expect(tree).toContain('Open shot.jpg')
+  expect(tree).not.toContain('"Image"')
+})
+
+test('the status file is written per session, under the config dir', async ($, on) => {
+  const written: string[] = []
+  on('session.start', async () => ({ cwd: CWD }))
+  on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  on('session.id', async () => ({ value: 'sess-a' }))
+  on('env.get', async ($, e) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('fs.write', async ($, e) => {
+    written.push(e.path.replace(/\\/g, '/'))
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(written.some(p => p.endsWith('/cfg/cockpit/sess-a.json'))).toBe(true)
+})

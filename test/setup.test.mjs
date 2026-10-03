@@ -47,11 +47,19 @@ test('a foreign statusLine is kept unless --force', () => {
   assert.ok(forced.settings.statusLine.command.includes('statusline.mjs'))
 })
 
+test('a status line merely named statusline.mjs is not ours; ours under another node is', () => {
+  const b = base()
+  b.settings.statusLine = { type: 'command', command: 'node ~/.claude/statusline.mjs' }
+  assert.equal(plan(b).settings.statusLine.command, 'node ~/.claude/statusline.mjs')
+  b.settings.statusLine = { type: 'command', command: `"/old/node" "${REPO}/statusline/statusline.mjs"` }
+  assert.equal(plan(b).settings.statusLine.command, `"${NODE}" "${REPO}/statusline/statusline.mjs"`)
+})
+
 test('palette and glyphs flags land under pluginConfigs.cockpit; absent flags write nothing', () => {
   const none = plan(base())
   assert.equal(none.settings.pluginConfigs, undefined)
   const some = plan({ ...base(), flags: { palette: 'ansi', glyphs: 'plain' } })
-  assert.deepEqual(some.settings.pluginConfigs.cockpit, { palette: 'ansi', glyphs: 'plain' })
+  assert.deepEqual(some.settings.pluginConfigs.cockpit, { options: { palette: 'ansi', glyphs: 'plain' } })
   assert.throws(() => plan({ ...base(), flags: { palette: 'typo' } }), /palette/)
   assert.throws(() => plan({ ...base(), flags: { palette: 'toString' } }), /palette/)
   assert.throws(() => plan({ ...base(), flags: { glyphs: 'huge' } }), /glyphs/)
@@ -79,7 +87,7 @@ test('--dry-run prints the plan and writes nothing; a real run backs settings up
   assert.equal(real.status, 0, real.stderr)
   const after = JSON.parse(readFileSync(join(cfg, 'settings.json'), 'utf8'))
   assert.ok(after.statusLine.command.includes('statusline.mjs'))
-  assert.equal(after.pluginConfigs.cockpit.palette, 'tokyo-night')
+  assert.equal(after.pluginConfigs.cockpit.options.palette, 'tokyo-night')
   assert.ok(readdirSync(cfg).some(f => f.startsWith('settings.json.bak-')), 'a backup exists')
   assert.ok(existsSync(join(cfg, 'keybindings.json')))
   assert.match(real.stdout, /restart claude/i)

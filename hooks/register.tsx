@@ -41,13 +41,20 @@ const configDir = async ($: EngineInterface) => {
   return home ? `${home}/.claude` : null
 }
 
+// One file per session (`cockpit/<session id>.json`, the id the status line's payload carries as
+// `session_id`), so two open sessions never draw each other's count or width. Never rejects: it
+// runs un-awaited from a render, where a rejection has no one to land on.
+// ponytail: one ~40-byte file per session, never pruned; prune by age if the folder ever matters.
 const publish = async ($: EngineInterface) => {
-  const dir = await configDir($)
-  if (!dir) return
-  const docs = await read($, files)
-  await $.fs
-    .write(`${dir}/cockpit-status.json`, JSON.stringify({ files: docs.length, columns }))
-    .catch(() => undefined)
+  try {
+    const dir = await configDir($)
+    const id = await $.session.id()
+    if (!dir || !/^[\w-]+$/.test(id)) return
+    const docs = await read($, files)
+    await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: docs.length, columns }))
+  } catch {
+    // the status line falls back to its own width sources and omits the count
+  }
 }
 
 // ─── what this session made ──────────────────────────────────────────────────────────────────
@@ -58,11 +65,15 @@ const OPENABLE = 'png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip'
 
 // Absolute OR relative: Playwright answers `./shot.png`, and an absolute-only pattern silently
 // found nothing. The separator classes take a RUN, because JSON.stringify escapes a Windows path
-// and a single-separator branch eats the drive letter (`C:/Users/…` → `/Users/…`).
+// and a single-separator branch eats the drive letter (`C:/Users/…` → `/Users/…`). Names take any
+// letter (`Rechnung-März.pdf`), not just ASCII. ponytail: a space ends a path in free text, so
+// `my report.pdf` in a command's output reads as `report.pdf`; the mtime check in `collect`
+// drops it unless the call produced that file. A Write never goes through this pattern.
 const FILE_PATH = new RegExp(
-  String.raw`(?:[A-Za-z]:[\\/]+|\.{0,2}[\\/]+)?[\w.\-][\w.\-\\/]*\.(?:${OPENABLE})`,
-  'gi',
+  String.raw`(?:[A-Za-z]:[\\/]+|\.{0,2}[\\/]+)?[\p{L}\p{N}_.\-][\p{L}\p{N}_.\-\\/]*\.(?:${OPENABLE})`,
+  'giu',
 )
+const IS_OPENABLE = new RegExp(String.raw`\.(?:${OPENABLE})$`, 'i')
 
 const isAbsolute = (p: string) => /^(?:[A-Za-z]:\/|\/)/.test(p)
 
@@ -76,7 +87,8 @@ export const pathsIn = (value: unknown, cwd?: string): string[] => {
 }
 
 const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
-const isImage = (path: string) => /\.(?:png|jpe?g|webp|gif)$/i.test(path)
+// PNG only: the terminal's Image takes PNG data, and anything else refuses the WHOLE pane.
+const isPng = (path: string) => /\.png$/i.test(path)
 
 // A hotkey is ONE digit or ONE lowercase letter, so there is no two-press scheme to build:
 // 1–9 then a–z is 35 single-press slots, more than KEEP will ever hold.
@@ -88,9 +100,18 @@ export const hotkeyFor = (i: number): string | undefined => {
 
 // Top level, not nested in `register`: the validator only traces `$` into a function declared at
 // the top of the file, and refuses a module that hands it to a closure it cannot follow.
-const collect = async ($: EngineInterface, paths: string[]) => {
+// `since`: keep only files modified after it, so a path a command merely printed (`git status`
+// listing README.md) is not taken for one it produced. 2 s of slack for coarse file-system clocks.
+const collect = async ($: EngineInterface, paths: string[], since?: number) => {
   const onDisk: string[] = []
-  for (const path of paths) if (await $.fs.exists(path).catch(() => false)) onDisk.push(path)
+  for (const path of paths) {
+    if (!(await $.fs.exists(path).catch(() => false))) continue
+    if (since !== undefined) {
+      const stat = await $.fs.stat(path).catch(() => null)
+      if (!stat || stat.mtimeMs < since - 2000) continue
+    }
+    onDisk.push(path)
+  }
   if (!onDisk.length) return
   const at = await $.clock.now()
   await update($, files, list => {
@@ -125,7 +146,7 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     await $.command.register({ name: 'files', description: 'Open a file this session produced' })
     await $.command.register({ name: 'shots', description: 'Open a screenshot this session took' })
-    void publish($)
+    await publish($)
     return started
   })
 
@@ -136,11 +157,12 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // A Write always names the file it wrote: the one case needing no guessing.
+  // A Write always names the file it wrote, absolute: taken as is, spaces and all.
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const ran = await next(e)
-    if (ran.deny === undefined && ran.isError !== true && e.file_path) {
-      await collect($, pathsIn(e.file_path, await $.session.cwd()))
+    const path = e.file_path?.replace(/\\/g, '/')
+    if (ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)) {
+      await collect($, [path])
     }
     return ran
   })
@@ -154,9 +176,10 @@ export const register: Register = (on, options) => {
     'mcp__plugin_figma_figma__get_screenshot',
   ]) {
     on('tool.call', { tool }, async ($, e, next) => {
+      const since = await $.clock.now()
       const ran = await next(e)
       if (ran.deny !== undefined || ran.isError === true) return ran
-      await collect($, pathsIn(ran, await $.session.cwd()))
+      await collect($, pathsIn(ran, await $.session.cwd()), since)
       return ran
     })
   }
@@ -203,7 +226,7 @@ export const register: Register = (on, options) => {
     }
 
     let inline = null
-    if (e.surface === 'terminal' && isImage(newest.path)) {
+    if (e.surface === 'terminal' && isPng(newest.path)) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
       const { Image } = $.ui.resolve(e)
