@@ -1,0 +1,7 @@
+{
+  "model": { "id": "claude-opus-5-5", "display_name": "Opus 5.5" },
+  "workspace": { "current_dir": "WILL_BE_REPLACED", "project_dir": "WILL_BE_REPLACED" },
+  "cwd": "WILL_BE_REPLACED",
+  "context_window": { "used_percentage": 37 },
+  "cost": { "total_duration_ms": 4800000 }
+}
