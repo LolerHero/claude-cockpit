@@ -11,7 +11,11 @@ import { plan } from '../setup.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const SETUP = join(here, '..', 'setup.mjs')
 const FIXTURE = JSON.parse(readFileSync(join(here, 'fixtures', 'settings.json'), 'utf8'))
-const REPO = 'E:/Coding/Projects/claude-cockpit'
+// Paths as this platform writes them: on Linux and macOS the plugin-dir separator is `:`, which a
+// drive letter would split.
+const WIN = process.platform === 'win32'
+const REPO = WIN ? 'E:/Coding/Projects/claude-cockpit' : '/home/me/claude-cockpit'
+const OTHER = WIN ? 'C:/other/mod' : '/opt/other/mod'
 const NODE = 'E:/nvm4w/nodejs/node.exe'
 const base = () => ({ settings: structuredClone(FIXTURE), keybindings: null, repo: REPO, node: NODE, flags: {} })
 
@@ -29,11 +33,11 @@ test('a fresh settings file gets the status line, the plugin dir and the keybind
 
 test('an existing plugin dir list is extended with the platform separator, once', () => {
   const b = base()
-  b.settings.env.CLAUDE_CODE_PLUGIN_DIRS = 'C:/other/mod'
+  b.settings.env.CLAUDE_CODE_PLUGIN_DIRS = OTHER
   const first = plan(b)
-  assert.equal(first.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `C:/other/mod${delimiter}${REPO}`)
+  assert.equal(first.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `${OTHER}${delimiter}${REPO}`)
   const again = plan({ ...b, settings: first.settings })
-  assert.equal(again.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `C:/other/mod${delimiter}${REPO}`)
+  assert.equal(again.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `${OTHER}${delimiter}${REPO}`)
   assert.ok(again.lines.some(l => l.startsWith('kept: env.CLAUDE_CODE_PLUGIN_DIRS')))
 })
 
