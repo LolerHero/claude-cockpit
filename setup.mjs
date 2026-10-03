@@ -4,7 +4,7 @@
 //
 // 1. settings.json → statusLine runs statusline/statusline.mjs with this Node
 // 2. settings.json → env.CLAUDE_CODE_PLUGIN_DIRS gains this folder (so the mod loads everywhere)
-// 3. settings.json → pluginConfigs.cockpit.options.{palette,glyphs} when the flags are given
+// 3. settings.json → pluginConfigs["cockpit@inline"].options.{palette,glyphs} when the flags are given
 // 4. keybindings.json → ctrl+x f opens /files, unless the chord is taken
 // Every change is printed as `changed: …`; everything left as is, `kept: …`. settings.json is
 // backed up before the first write. The config dir is CLAUDE_CONFIG_DIR or ~/.claude.
@@ -20,6 +20,9 @@ import { PALETTES } from './palettes.js'
 const GLYPHS = ['nerd', 'plain']
 const CHORD = 'ctrl+x f'
 const COMMAND = 'command:files'
+// Where the config menu stores this plugin's options when it loads from a folder
+// (CLAUDE_CODE_PLUGIN_DIRS): `<name>@inline`, measured on 2.1.288. Setup writes the same key.
+const KEY = 'cockpit@inline'
 
 /** Pure: the settings and keybindings after setup, plus the lines to print. Throws on a bad flag. */
 export function plan({ settings, keybindings, repo, node, flags }) {
@@ -58,15 +61,15 @@ export function plan({ settings, keybindings, repo, node, flags }) {
   // 3. options, only when asked; the config menu in Claude Code edits the same keys
   if (flags.palette !== undefined || flags.glyphs !== undefined) {
     s.pluginConfigs ??= {}
-    s.pluginConfigs.cockpit ??= {}
-    s.pluginConfigs.cockpit.options ??= {}
+    s.pluginConfigs[KEY] ??= {}
+    s.pluginConfigs[KEY].options ??= {}
     if (flags.palette !== undefined) {
-      s.pluginConfigs.cockpit.options.palette = flags.palette
-      lines.push(`changed: pluginConfigs.cockpit.options.palette → ${flags.palette}`)
+      s.pluginConfigs[KEY].options.palette = flags.palette
+      lines.push(`changed: pluginConfigs["${KEY}"].options.palette → ${flags.palette}`)
     }
     if (flags.glyphs !== undefined) {
-      s.pluginConfigs.cockpit.options.glyphs = flags.glyphs
-      lines.push(`changed: pluginConfigs.cockpit.options.glyphs → ${flags.glyphs}`)
+      s.pluginConfigs[KEY].options.glyphs = flags.glyphs
+      lines.push(`changed: pluginConfigs["${KEY}"].options.glyphs → ${flags.glyphs}`)
     }
   }
 

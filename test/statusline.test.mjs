@@ -23,7 +23,7 @@ function run({ columns, palette, glyphs, status = {}, settings, payload = PAYLOA
   if (settings !== 'missing') {
     writeFileSync(
       join(cfg, 'settings.json'),
-      settings === 'garbage' ? '{ not json' : JSON.stringify({ pluginConfigs: { cockpit: { options: { palette, glyphs } } } }),
+      settings === 'garbage' ? '{ not json' : JSON.stringify({ pluginConfigs: { 'cockpit@inline': { options: { palette, glyphs } } } }),
     )
   }
   mkdirSync(join(cfg, 'cockpit'))
@@ -90,6 +90,21 @@ test('an unknown palette or glyph value falls back to the defaults', () => {
   const out = run({ columns: 144, palette: 'typo', glyphs: 'wat' })
   assert.match(out, /\x1b\[38;2;144;140;170m/)
   assert.match(out.replace(ANSI, ''), / 3/)
+})
+
+test('with both keys stored, the one the config menu writes for a folder plugin wins', () => {
+  // Measured 2026-10-04: /config stored pluginConfigs["cockpit@inline"].options for this plugin
+  // loaded through CLAUDE_CODE_PLUGIN_DIRS. A stale `cockpit` key must not override it.
+  const dir = mkdtempSync(join(tmpdir(), 'cockpit-'))
+  writeFileSync(
+    join(dir, 'settings.json'),
+    JSON.stringify({ pluginConfigs: { cockpit: { options: { palette: 'ansi' } }, 'cockpit@inline': { options: { palette: 'tokyo-night' } } } }),
+  )
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: dir }
+  delete env.WEZTERM_PANE
+  const p = { ...PAYLOAD, cwd: dir, workspace: { current_dir: dir, project_dir: dir } }
+  const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(p), env, cwd: dir, encoding: 'utf8' })
+  assert.match(r.stdout, /\x1b\[38;2;169;177;214m/) // tokyo-night subtle, not ansi
 })
 
 test('a missing or unparsable settings.json still draws', () => {

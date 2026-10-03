@@ -38,11 +38,12 @@ const readJson = path => {
   }
 }
 
-/** The plugin's options as the config menu stores them, under `pluginConfigs[<name>].options`
- *  (`<name>@inline` for a plugin-dir plugin, per the 2.1.288 types); defaults for anything odd. */
+/** The plugin's options as the config menu stores them, under `pluginConfigs[<key>].options`.
+ *  Loaded from a folder the key is `cockpit@inline` (measured on 2.1.288, 2026-10-04), so that
+ *  comes first; plain `cockpit` is the key a marketplace install would use. Defaults for anything odd. */
 function options() {
   const s = readJson(join(configDir(), 'settings.json'))
-  const c = s?.pluginConfigs?.cockpit?.options ?? s?.pluginConfigs?.['cockpit@inline']?.options ?? {}
+  const c = s?.pluginConfigs?.['cockpit@inline']?.options ?? s?.pluginConfigs?.cockpit?.options ?? {}
   return { palette: paletteOf(c.palette), glyphs: c.glyphs === 'plain' ? 'plain' : 'nerd' }
 }
 
