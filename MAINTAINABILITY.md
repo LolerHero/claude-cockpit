@@ -23,13 +23,13 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 
 ## Current scoring
 
-*Scored 2026-10-03, at 0.1.0.*
+*Scored 2026-10-03, at 0.1.0; re-scored 2026-10-04 after CI (category 3).*
 
 | # | Category | Score | Why |
 |---|---|---|---|
 | 1 | Onboarding documentation | 4 | README covers install, palettes and how it works; a setup script wires everything. No first-change walkthrough. |
 | 2 | Inline code documentation | 4 | Every module opens with its purpose; the non-obvious choices (Windows path escaping, why `$.env`, the drop order) carry their reason. |
-| 3 | Test coverage of critical paths | 3 | Palettes, the status line (width, palettes, glyphs, bad input), setup (pure plan + real runs) and the pane's drawing of an image are covered. Hotkey presses and the opener are not; no CI gate. |
+| 3 | Test coverage of critical paths | 4 | Palettes, the status line (width, palettes, glyphs, bad input, per-session status), setup (pure plan + real runs) and the pane (drawing, collection, counts, the dialog's rows) are covered, gated by CI on Linux, macOS and Windows plus the plugin tests on the pinned engine. Hotkey presses and the opener are not. |
 | 4 | Type safety | 3 | The mod is typed against the engine's laid types; `tsc` still reports a handful of build-specific errors (tool matcher union depth, an index access). `palettes.js` carries a `.d.ts`. |
 | 5 | Architectural consistency | 4 | One pattern per concern: the mod owns engine state, the status line reads one JSON file, both share one palette table. |
 | 6 | Dependency hygiene | 5 | No dependencies. Node's own test runner. |
@@ -37,10 +37,9 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 | 8 | Configuration & secrets | 5 | Nothing secret. The two options live in the manifest's `userConfig` and Claude Code's config menu; setup writes the same keys. |
 | 9 | Build & deploy reproducibility | 4 | Nothing to build; one command installs (`node setup.mjs`), with a dry run and a backup. No release process or tags yet. |
 | 10 | Error handling & observability | 3 | The status line swallows on purpose (a throwing status line goes blank) and degrades segment by segment; setup refuses a settings.json it cannot parse; the pane toasts a failed open. No logging. |
-| | **Total** | **40 / 50** | Below the 42 threshold; see targets. |
+| | **Total** | **41 / 50** | One below the 42 threshold; see targets. |
 
 ## Next-move targets
 
-1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 3 → 4.
-2. **A CI workflow** running `node --test "test/*.test.mjs"` and `claude plugin test .` on push. Moves 3 → 4 and guards every later change.
-3. **A release tag** (`v0.1.0`) and a CHANGELOG line per release, so a user can pin a version against a Claude Code build. Moves 9 → 5.
+1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 3 → 5 with the CI gate in place.
+2. **A release tag** (`v0.1.0`) and a CHANGELOG line per release, so a user can pin a version against a Claude Code build. Moves 9 → 5.
