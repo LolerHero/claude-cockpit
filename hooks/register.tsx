@@ -1,1 +1,249 @@
-export const register = () => {}
+// cockpit — a pane of what this session made, and the figures the status line needs.
+//
+//   Opus 5.5 │ Coding │ main* │ ▪▪▪▪▪                          3  ·  1h 20m   ← status line
+//
+//   1 Open 2026-10-03-report.pdf        ← the pane: /files, /shots, or ctrl+x f
+//   2 Open home-1440.png
+//
+// THE PANE: files a tool wrote or produced this session, newest first, one key each. Only things
+// a person opens (documents, images, archives) — never source, which belongs in the editor.
+// THE STATUS FILE: the status line is a separate Node process and cannot measure the terminal or
+// count files; this module publishes both to <config dir>/cockpit-status.json on every change.
+//
+// The hint line under the prompt is left to the engine. Tried and dropped on 2.1.288: the hint
+// prop carries only the coaching text, the mode words are a pill no hook sees, and a rewritten
+// hint is drawn as its own element even when empty, between two separators.
+
+import { atom, read, update } from 'claude-code'
+import type { Register, EngineInterface } from 'claude-code'
+
+import type { Doc } from '../types'
+import { paletteOf } from '../palettes.js'
+
+const PANE = 'files'
+const KEEP = 20
+const INLINE_MAX_BYTES = 400_000 // a tree carries bounded text; a big PNG gets the button alone
+
+// The key reaches the pane through `/files`, not a Button `action`: ~/.claude/keybindings.json
+// binds `ctrl+x f` to `command:files` in the Chat context (setup.mjs writes that binding).
+
+const files = atom({ plugin: 'cockpit', key: 'files' } as const, [])
+
+// Module-level: a reload starts at 0 until the next draw measures again; the status line then
+// falls back to its own width sources.
+let columns = 0
+
+// `$.env`, never `process.env`: the module runs in an environment of its own, with no Node.
+const configDir = async ($: EngineInterface) => {
+  const set = await $.env.get('CLAUDE_CONFIG_DIR').catch(() => null)
+  if (set) return set
+  const home = (await $.env.get('USERPROFILE').catch(() => null)) ?? (await $.env.get('HOME').catch(() => null))
+  return home ? `${home}/.claude` : null
+}
+
+const publish = async ($: EngineInterface) => {
+  const dir = await configDir($)
+  if (!dir) return
+  const docs = await read($, files)
+  await $.fs
+    .write(`${dir}/cockpit-status.json`, JSON.stringify({ files: docs.length, columns }))
+    .catch(() => undefined)
+}
+
+// ─── what this session made ──────────────────────────────────────────────────────────────────
+
+// Things a person opens, not things a person greps. Deliberately NOT .ts/.py/.json — source
+// belongs in the editor, and listing it buries the one file they wanted among forty imports.
+const OPENABLE = 'png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip'
+
+// Absolute OR relative: Playwright answers `./shot.png`, and an absolute-only pattern silently
+// found nothing. The separator classes take a RUN, because JSON.stringify escapes a Windows path
+// and a single-separator branch eats the drive letter (`C:/Users/…` → `/Users/…`).
+const FILE_PATH = new RegExp(
+  String.raw`(?:[A-Za-z]:[\\/]+|\.{0,2}[\\/]+)?[\w.\-][\w.\-\\/]*\.(?:${OPENABLE})`,
+  'gi',
+)
+
+const isAbsolute = (p: string) => /^(?:[A-Za-z]:\/|\/)/.test(p)
+
+export const pathsIn = (value: unknown, cwd?: string): string[] => {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? '')
+  const found = [...new Set(text.match(FILE_PATH) ?? [])].map(p =>
+    p.replace(/[\\/]+/g, '/').replace(/^\.\//, ''),
+  )
+  const base = cwd?.replace(/\\/g, '/').replace(/\/+$/, '')
+  return found.map(p => (isAbsolute(p) || !base ? p : `${base}/${p}`))
+}
+
+const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
+const isImage = (path: string) => /\.(?:png|jpe?g|webp|gif)$/i.test(path)
+
+// A hotkey is ONE digit or ONE lowercase letter, so there is no two-press scheme to build:
+// 1–9 then a–z is 35 single-press slots, more than KEEP will ever hold.
+export const hotkeyFor = (i: number): string | undefined => {
+  if (i < 9) return String(i + 1)
+  const letter = i - 9
+  return letter < 26 ? String.fromCharCode(97 + letter) : undefined
+}
+
+// Top level, not nested in `register`: the validator only traces `$` into a function declared at
+// the top of the file, and refuses a module that hands it to a closure it cannot follow.
+const collect = async ($: EngineInterface, paths: string[]) => {
+  const onDisk: string[] = []
+  for (const path of paths) if (await $.fs.exists(path).catch(() => false)) onDisk.push(path)
+  if (!onDisk.length) return
+  const at = await $.clock.now()
+  await update($, files, list => {
+    const fresh = onDisk.filter(p => !list.some(d => d.path === p))
+    return [...list, ...fresh.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
+  })
+  await publish($)
+}
+
+// Open as a dialog: it takes the keyboard at once (so a hotkey works without `ctrl+x tab`), Esc
+// closes it, and toasts wait behind it rather than landing on the list being picked from.
+const openPane = async ($: EngineInterface) => {
+  await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true })
+}
+
+// The host's own opener, no shell. Windows: `cmd /c start "" <path>` — the empty string is
+// `start`'s title argument, without it a quoted path becomes the title. macOS: `open`. Linux:
+// `xdg-open`. A failure says so: a silent dead press is the worst outcome for a button.
+const openerFor = async ($: EngineInterface, path: string): Promise<string[]> => {
+  const os = ((await $.env.get('OS').catch(() => null)) ?? '').toLowerCase()
+  if (os.includes('windows') || (await $.env.get('USERPROFILE').catch(() => null))) {
+    return ['cmd', '/c', 'start', '', path.replace(/\//g, '\\')]
+  }
+  const uname = await $.process.run(['uname'], { timeoutMs: 2000 }).catch(() => null)
+  return [(uname?.stdout ?? '').trim() === 'Darwin' ? 'open' : 'xdg-open', path]
+}
+
+export const register: Register = (on, options) => {
+  const palette = paletteOf(options.palette)
+
+  on('session.start', async ($, e, next) => {
+    const started = await next(e)
+    await $.command.register({ name: 'files', description: 'Open a file this session produced' })
+    await $.command.register({ name: 'shots', description: 'Open a screenshot this session took' })
+    void publish($)
+    return started
+  })
+
+  for (const command of ['files', 'shots']) {
+    on('command.run', { command }, async $ => {
+      await openPane($)
+      return {} // silent: the pane itself is the answer
+    })
+  }
+
+  // A Write always names the file it wrote: the one case needing no guessing.
+  on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.deny === undefined && ran.isError !== true && e.file_path) {
+      await collect($, pathsIn(e.file_path, await $.session.cwd()))
+    }
+    return ran
+  })
+
+  // Everything else: read the answer, keep what is openable AND on disk. Bash is here because
+  // the scripts that produce the real artefacts — invoices, reports — are run, not written.
+  for (const tool of [
+    'Bash',
+    'mcp__playwright__browser_take_screenshot',
+    'mcp__claude-in-chrome__computer',
+    'mcp__plugin_figma_figma__get_screenshot',
+  ]) {
+    on('tool.call', { tool }, async ($, e, next) => {
+      const ran = await next(e)
+      if (ran.deny !== undefined || ran.isError === true) return ran
+      await collect($, pathsIn(ran, await $.session.cwd()))
+      return ran
+    })
+  }
+
+  // No band of its own: the hook only measures the width for the status line, then lets the
+  // engine draw whatever belongs there.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const width = e.viewport?.columns ?? 0
+    if (width && width !== columns) {
+      columns = width
+      void publish($)
+    }
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const all = await read($, files)
+
+    // Only what is still on disk: a file can be deleted or moved after it was collected, and a
+    // button that opens nothing reads as the mod being broken rather than as a missing file.
+    const checked = await Promise.all(
+      all.map(async doc => ((await $.fs.exists(doc.path).catch(() => false)) ? doc : null)),
+    )
+    const list = checked.filter((doc): doc is Doc => doc !== null)
+
+    if (!list.length) {
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.subtle}>Nothing written yet this session.</Text>
+        </Box>
+      )
+    }
+
+    const newest = list[list.length - 1]
+
+    const open = (path: string) => () => {
+      void openerFor($, path)
+        .then(cmd => $.process.run(cmd))
+        .then(r => {
+          if (r.exitCode !== 0) $.ui.toast(`could not open ${label(path)} (exit ${r.exitCode})`)
+        })
+        .catch(() => $.ui.toast(`could not open ${label(path)}`))
+    }
+
+    let inline = null
+    if (e.surface === 'terminal' && isImage(newest.path)) {
+      // Resolved here, not above: `Image` exists only in the terminal's element table, and
+      // narrowing on e.surface is what hands it over. A module has no element globals.
+      const { Image } = $.ui.resolve(e)
+      const stat = await $.fs.stat(newest.path).catch(() => null)
+      if (stat && stat.size <= INLINE_MAX_BYTES) {
+        const file = await $.fs.read(newest.path, { as: 'bytes' }).catch(() => null)
+        if (file) {
+          const cols = Math.max(20, (e.props?.bodyColumns ?? 60) - 2)
+          inline = (
+            <Image
+              source={{ png: file.base64 }} // FsBytes is `{ base64 }`, already encoded
+              columns={cols}
+              rows={Math.round(cols / 3)}
+              alt={`${newest.label} — press its key to open it`}
+            />
+          )
+        }
+      }
+    }
+
+    return (
+      <Box flexDirection="column">
+        {list
+          .slice()
+          .reverse()
+          .map((doc, i) => (
+            // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
+            // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
+            <Button
+              key={doc.path}
+              plain
+              hotkey={hotkeyFor(i)}
+              autoFocus={i === 0 ? true : undefined}
+              onPress={open(doc.path)}
+            >
+              {`Open ${doc.label}`}
+            </Button>
+          ))}
+        {inline}
+      </Box>
+    )
+  })
+}
