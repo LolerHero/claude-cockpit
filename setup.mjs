@@ -124,7 +124,7 @@ function main() {
   }
   writeFileSync(settingsPath, JSON.stringify(out.settings, null, 2) + '\n')
   writeFileSync(keysPath, JSON.stringify(out.keybindings, null, 2) + '\n')
-  console.log('done — restart claude. Then: /files opens the pane, /shots the screenshots, ctrl+x f is the hotkey.')
+  console.log('done — restart claude. Then: /files opens the pane, ctrl+x f is the hotkey.')
 }
 
 // Run only as a script, not when the tests import `plan`. Lower-cased: Windows hands the drive

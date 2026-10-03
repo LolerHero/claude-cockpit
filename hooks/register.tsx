@@ -23,6 +23,7 @@ import { paletteOf } from '../palettes.js'
 const PANE = 'files'
 const KEEP = 20
 const INLINE_MAX_BYTES = 400_000 // a tree carries bounded text; a big PNG gets the button alone
+export const IMAGE_ROWS = 10 // the inline preview's height in cells; `openPane` asks room for it
 
 // The key reaches the pane through `/files`, not a Button `action`: ~/.claude/keybindings.json
 // binds `ctrl+x f` to `command:files` in the Chat context (setup.mjs writes that binding).
@@ -123,8 +124,14 @@ const collect = async ($: EngineInterface, paths: string[], since?: number) => {
 
 // Open as a dialog: it takes the keyboard at once (so a hotkey works without `ctrl+x tab`), Esc
 // closes it, and toasts wait behind it rather than landing on the list being picked from.
+// `rows` is what makes the arrows walk the list: a dialog tall enough to show whole has nothing
+// to scroll, and while it has, the engine spends the arrows on scrolling (measured 2026-10-03:
+// opened a third tall, a 20-row image box made the list scroll and the arrows dead).
 const openPane = async ($: EngineInterface) => {
-  await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true })
+  const list = await read($, files)
+  const newest = list[list.length - 1]
+  const rows = Math.max(1, list.length) + 1 + (newest && isPng(newest.path) ? IMAGE_ROWS + 1 : 0)
+  await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true, rows })
 }
 
 // The host's own opener, no shell. Windows: `cmd /c start "" <path>` — the empty string is
@@ -145,17 +152,14 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'files', description: 'Open a file this session produced' })
-    await $.command.register({ name: 'shots', description: 'Open a screenshot this session took' })
     await publish($)
     return started
   })
 
-  for (const command of ['files', 'shots']) {
-    on('command.run', { command }, async $ => {
-      await openPane($)
-      return {} // silent: the pane itself is the answer
-    })
-  }
+  on('command.run', { command: 'files' }, async $ => {
+    await openPane($)
+    return {} // silent: the pane itself is the answer
+  })
 
   // A Write always names the file it wrote, absolute: taken as is, spaces and all.
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
@@ -234,13 +238,16 @@ export const register: Register = (on, options) => {
       if (stat && stat.size <= INLINE_MAX_BYTES) {
         const file = await $.fs.read(newest.path, { as: 'bytes' }).catch(() => null)
         if (file) {
-          const cols = Math.max(20, (e.props?.bodyColumns ?? 60) - 2)
+          // A fixed, small box: it is what `openPane` asks rows for, and a terminal cell is about
+          // twice as tall as wide, so 3 columns a row keeps a screenshot roughly in proportion.
+          const cols = Math.min(IMAGE_ROWS * 3, Math.max(10, (e.props?.bodyColumns ?? 60) - 2))
           inline = (
             <Image
               source={{ png: file.base64 }} // FsBytes is `{ base64 }`, already encoded
               columns={cols}
-              rows={Math.round(cols / 3)}
-              alt={`${newest.label} — press its key to open it`}
+              rows={IMAGE_ROWS}
+              // The engine draws pixels in kitty and Ghostty only; everywhere else, this.
+              alt="(image preview needs kitty or Ghostty)"
             />
           )
         }
@@ -265,6 +272,7 @@ export const register: Register = (on, options) => {
               {`Open ${doc.label}`}
             </Button>
           ))}
+        <Text color={palette.muted}>↑↓ or Tab move · Enter or its key opens · Esc closes</Text>
         {inline}
       </Box>
     )

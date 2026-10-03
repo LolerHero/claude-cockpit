@@ -1,11 +1,14 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, hotkeyFor } from './register.tsx'
+import { pathsIn, hotkeyFor, IMAGE_ROWS } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
 // session starts in a fixed directory; nothing in `session.start` reads it.
 const CWD = '/work'
+
+// A real 1x1 PNG: the terminal's Image refuses bytes without an IHDR.
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
 const PANE_PROPS = {
   title: 'Files',
@@ -69,8 +72,36 @@ test('the mod loads with its manifest defaults and registers both commands', asy
     return { value: { command: e.name } }
   })
   await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
-  expect(names).toContain('files')
-  expect(names).toContain('shots')
+  expect(names).toEqual(['files']) // one command: /shots opened the same list under a false name
+})
+
+test('the dialog asks for rows enough to show it whole, so the arrows walk rather than scroll', async ($, on) => {
+  // reference.md: a dialog opened with `rows` "shows whole and its arrows walk rather than
+  // scroll". Opened a third tall with a 20-row Image box, the arrows scrolled instead.
+  const opened: { rows?: number }[] = []
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  on('ui.open', async ($, e) => {
+    opened.push(e)
+    return { value: { isPlaced: true } }
+  })
+  for (const name of ['a.md', 'b.md', 'c.md', 'shot.png']) {
+    await $.tool.call({ tool: 'Write', file_path: `/work/${name}`, content: 'x' })
+  }
+  await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: false, columns: 120 } })
+  const tree = await drawPane($)
+  const rows = opened[0]?.rows ?? 0
+  // 4 buttons + the hint + the image box and its gap: everything drawn fits in what was asked.
+  expect(rows).toBeGreaterThanOrEqual(4 + 1 + IMAGE_ROWS + 1)
+  expect(tree).toContain('Tab')
+  expect(tree).toContain('Esc')
+})
+
+test("an image's fallback says why there is no picture", async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
+  expect(await drawPane($)).toContain('kitty or Ghostty')
 })
 
 test('the ansi palette reaches the module as its option', { options: { palette: 'ansi' } }, async ($, on) => {
@@ -132,7 +163,7 @@ const disk = (on: any, mtime: Record<string, number> = {}, asked: string[] = [])
     // The engine hands hooks the native, resolved path (`E:\work\README.md`): match by name.
     value: { kind: 'file', size: 10, mtimeMs: mtime[e.path.split(/[\\/]/).pop() ?? ''] ?? NOW, isLink: false },
   }))
-  on('fs.read', async () => ({ value: { base64: '' } }))
+  on('fs.read', async () => ({ value: { base64: PNG } }))
 }
 
 const drawPane = async ($: any) => {

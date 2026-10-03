@@ -20,7 +20,7 @@ Opus 5.5 │ Coding │ main* +12 -3 │ ▪▪▪▪▪                  3  · 
 
 When the terminal is too narrow, segments drop in this order: model, directory, file count, churn, clock, branch, and the context bar last. The row never wraps.
 
-The pane opens with `/files`, `/shots` or `ctrl+x f`. It lists the files this session wrote or produced, newest first, each on its own key (`1`–`9`, then `a`–`z`). Press a key and the file opens in your system's default app. The newest image is also drawn inline in the terminal. A file counts when a person would open it: documents, images, spreadsheets, slides, archives, Markdown and HTML. Source code never counts, since that belongs in your editor.
+The pane opens with `/files` or `ctrl+x f`. It lists the files this session wrote or produced, newest first. The arrows or Tab move the selection and Enter opens it; each file also has its own key (`1`–`9`, then `a`–`z`). A file opens in your system's default app, and Esc closes the pane. When the newest file is a PNG, it is also drawn in the pane, in terminals that can show pictures (kitty and Ghostty); elsewhere a line says so. A file counts when a person would open it: documents, images, spreadsheets, slides, archives, Markdown and HTML. Source code never counts, since that belongs in your editor.
 
 ## Requirements
 
