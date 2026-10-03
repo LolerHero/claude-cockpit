@@ -23,7 +23,7 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 
 ## Current scoring
 
-*Scored 2026-10-03, at 0.1.0; re-scored 2026-10-04 after CI (category 3).*
+*Scored 2026-10-03; re-scored 2026-10-04 after CI (category 3) and the v0.1.0 release (category 9).*
 
 | # | Category | Score | Why |
 |---|---|---|---|
@@ -35,11 +35,10 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 | 6 | Dependency hygiene | 5 | No dependencies. Node's own test runner. |
 | 7 | Database migration discipline | 5 | No database. |
 | 8 | Configuration & secrets | 5 | Nothing secret. The two options live in the manifest's `userConfig` and Claude Code's config menu; setup writes the same keys. |
-| 9 | Build & deploy reproducibility | 4 | Nothing to build; one command installs (`node setup.mjs`), with a dry run and a backup. No release process or tags yet. |
+| 9 | Build & deploy reproducibility | 5 | Nothing to build; one command installs (`node setup.mjs`), with a dry run and a backup. Releases are tagged with the Claude Code build they were tested against (CHANGELOG.md), so a user can pin one. |
 | 10 | Error handling & observability | 3 | The status line swallows on purpose (a throwing status line goes blank) and degrades segment by segment; setup refuses a settings.json it cannot parse; the pane toasts a failed open. No logging. |
-| | **Total** | **41 / 50** | One below the 42 threshold; see targets. |
+| | **Total** | **42 / 50** | At the buyer-ready threshold, no category below 3. |
 
 ## Next-move targets
 
 1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 4 → 5.
-2. **A release tag** (`v0.1.0`) and a CHANGELOG line per release, so a user can pin a version against a Claude Code build. Moves 9 → 5.

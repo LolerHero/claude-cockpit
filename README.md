@@ -37,7 +37,7 @@ cd claude-cockpit
 node setup.mjs            # add --palette tokyo-night, --glyphs plain, --dry-run, --force
 ```
 
-Then restart `claude`.
+Then restart `claude`. To stay on a release tested against your Claude Code build, clone its tag instead (`git clone --branch v0.1.0 …`); [CHANGELOG.md](CHANGELOG.md) names the build each release was tested on.
 
 What setup changes, in `~/.claude` (or `CLAUDE_CONFIG_DIR`):
 
