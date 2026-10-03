@@ -102,6 +102,16 @@ test('the pane lists a written image and draws it inline from its base64', async
   expect(tree).toContain('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
 })
 
+test('a file named three times in one answer is collected once', () => {
+  // Playwright's real answer (2.1.288 session, 2026-10-03): the link, the comment and the code
+  // each name the file, escaped differently; before the fix the pane listed it twice.
+  const text =
+    '### Result\n- [Screenshot of viewport](.playwright-mcp\\google-start.png)\n### Ran Playwright code\n' +
+    "```js\n// Screenshot viewport and save it as .playwright-mcp\\google-start.png\n" +
+    "await page.screenshot({\n  path: '.playwright-mcp\\\\google-start.png',\n  scale: 'css',\n  type: 'png'\n});\n```"
+  expect(pathsIn([{ type: 'text', text }], 'E:\\Coding')).toEqual(['E:/Coding/.playwright-mcp/google-start.png'])
+})
+
 test('a file name outside ASCII is kept whole', () => {
   expect(pathsIn('wrote /home/u/Rechnung-März.pdf')).toEqual(['/home/u/Rechnung-März.pdf'])
 })

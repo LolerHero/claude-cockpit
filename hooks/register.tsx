@@ -79,11 +79,11 @@ const isAbsolute = (p: string) => /^(?:[A-Za-z]:\/|\/)/.test(p)
 
 export const pathsIn = (value: unknown, cwd?: string): string[] => {
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? '')
-  const found = [...new Set(text.match(FILE_PATH) ?? [])].map(p =>
-    p.replace(/[\\/]+/g, '/').replace(/^\.\//, ''),
-  )
+  const found = (text.match(FILE_PATH) ?? []).map(p => p.replace(/[\\/]+/g, '/').replace(/^\.\//, ''))
   const base = cwd?.replace(/\\/g, '/').replace(/\/+$/, '')
-  return found.map(p => (isAbsolute(p) || !base ? p : `${base}/${p}`))
+  // De-duplicated AFTER normalising: one file named in several escapings (Playwright's link,
+  // comment and code) is one path, not three.
+  return [...new Set(found.map(p => (isAbsolute(p) || !base ? p : `${base}/${p}`)))]
 }
 
 const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
