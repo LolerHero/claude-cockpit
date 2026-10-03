@@ -41,4 +41,53 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 
 ## Next-move targets
 
-1. **Test the pane's presses** — a press on a hotkey runs the opener, and a non-zero exit toasts. Moves 4 → 5.
+1. **Test the pane's presses**: a press on a hotkey runs the opener, and a non-zero exit shows a toast.
+   This is category 3, from 4 to 5.
+
+## Known gaps
+
+Small, known, and deliberately left. Each is cheap to fix when it starts to matter.
+
+- `setup.mjs` backs up `settings.json` but rewrites `keybindings.json` without a backup.
+- The plugin-folder check compares exact strings, so `E:\x` and `E:/x` would both be added to `CLAUDE_CODE_PLUGIN_DIRS`.
+- The test "the ansi palette reaches the module as its option" only checks `paletteOf`. It proves the mod loads with the option set, not that the pane uses it.
+- In free text (a command's output), a space ends a path: `my report.pdf` is read as `report.pdf`, then dropped unless that call produced the file. A Write is collected at its exact path and is not affected.
+- The arrows walk the list only while the dialog fits on screen. A list longer than the layout allows scrolls instead (Tab still walks).
+- The image preview draws only in kitty and Ghostty. Other terminals get a line saying so.
+- `/files` and `ctrl+x f` wait while a turn is running: Claude Code runs a slash command once the session is idle.
+- `~/.claude/cockpit/` keeps one small status file per session and never prunes them.
+- `tsc` still reports build-specific errors (TS18048, TS2322, TS2589, TS5097), which is why type safety is at 3.
+
+## Releasing
+
+Every release is tested against one Claude Code build, and the CI job pins that build.
+
+**When Claude Code updates:**
+
+1. On a branch, change the pin in `.github/workflows/test.yml` (`@anthropic-ai/claude-code@<version>`) and open a pull request.
+2. CI runs the node tests on Linux, macOS and Windows with Node 22 and 24, then `claude plugin validate` and `claude plugin test` on the pinned build.
+3. **Green:** bump `version` in `.claude-plugin/plugin.json` and add a section to `CHANGELOG.md` (`## v<x.y.z> — <date>`, then `Tested against Claude Code <version>.`). Merge, then:
+   ```
+   git tag -a v<x.y.z> -m "v<x.y.z> — tested against Claude Code <version>"
+   git push origin v<x.y.z>
+   gh release create v<x.y.z> --title v<x.y.z> --notes-file <that CHANGELOG section>
+   ```
+4. **Red:** the hooks API moved. Fix it before tagging. The plugin tests fake every engine call the mod makes (`disk()` in `hooks/cockpit.test.ts`), so a changed shape shows up there first.
+
+**Checks before any push:**
+
+```
+claude plugin validate .
+claude plugin test .
+node --test "test/*.test.mjs"
+```
+
+For the type check, the engine has to lay its types first: load the plugin once (`claude --plugin-dir .`), then run `npx -p typescript tsc -p .`.
+
+**Trying it next to another plugin named `cockpit`:** setting `CLAUDE_CODE_PLUGIN_DIRS` in the shell does not override the `env` block in `settings.json` (measured on 2.1.288). Pass it as a settings layer instead:
+
+```
+claude --settings '{"env":{"CLAUDE_CODE_PLUGIN_DIRS":"<this folder>"}}'
+```
+
+The config menu stores this plugin's options under `pluginConfigs["cockpit@inline"].options` when it loads from a folder. The status line reads that key first, and setup writes it.
