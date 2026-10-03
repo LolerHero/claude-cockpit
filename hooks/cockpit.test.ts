@@ -179,9 +179,11 @@ test('a Write is collected at its exact path, spaces and all', async ($, on) => 
   const asked: string[] = []
   disk(on, {}, asked)
   on('tool.call', async () => ({ result: { content: [] } }))
-  await $.tool.call({ tool: 'Write', file_path: 'C:\\Users\\John Smith\\report.pdf', content: 'x' })
-  // Native separators by the time a hook sees it; the point is the space survived, whole.
-  expect(asked.map(p => p.replace(/\\/g, '/'))).toContain('C:/Users/John Smith/report.pdf')
+  // Rooted on every platform: a `C:\` path is relative on Linux, and the engine resolves it
+  // against the session. Native separators and a drive by the time a hook sees it on Windows;
+  // the point is the space survived, whole.
+  await $.tool.call({ tool: 'Write', file_path: '/Users/John Smith/report.pdf', content: 'x' })
+  expect(asked.some(p => p.replace(/\\/g, '/').endsWith('/Users/John Smith/report.pdf'))).toBe(true)
   expect(await drawPane($)).toContain('Open report.pdf')
 })
 
