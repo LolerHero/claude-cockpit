@@ -149,16 +149,20 @@ test('a file name outside ASCII is kept whole', () => {
 
 /** Answers the engine calls the module makes, on a disk where every file exists. `mtime` maps a
  *  file name to its modification time (default: written just now); `asked` records exists() paths. */
-const disk = (on: any, mtime: Record<string, number> = {}, asked: string[] = []) => {
+const disk = (on: any, mtime: Record<string, number> = {}, asked: string[] = [], writes: string[] = []) => {
   const NOW = 1_000_000
   on('session.cwd', async () => ({ value: CWD }))
-  on('env.get', async () => ({ value: undefined }))
+  on('env.get', async ($: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('session.id', async () => ({ value: 'sess-a' }))
   on('clock.now', async () => ({ value: NOW }))
   on('fs.exists', async ($: unknown, e: { path: string }) => {
     asked.push(e.path)
     return { value: true }
   })
-  on('fs.write', async () => ({ value: undefined }))
+  on('fs.write', async ($: unknown, e: { text: string }) => {
+    writes.push(e.text)
+    return { value: undefined }
+  })
   on('fs.stat', async ($: unknown, e: { path: string }) => ({
     // The engine hands hooks the native, resolved path (`E:\work\README.md`): match by name.
     value: { kind: 'file', size: 10, mtimeMs: mtime[e.path.split(/[\\/]/).pop() ?? ''] ?? NOW, isLink: false },
@@ -214,4 +218,24 @@ test('the status file is written per session, under the config dir', async ($, o
   })
   await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
   expect(written.some(p => p.endsWith('/cfg/cockpit/sess-a.json'))).toBe(true)
+})
+
+test('"write 2 files and take a screenshot" counts 3', async ($, on) => {
+  // Julian's session bfab1da0, replayed: two Writes, then Playwright's real answer, which names
+  // the screenshot three times. The status file must say 3, the pane must list 3.
+  const status: string[] = []
+  disk(on, {}, [], status)
+  const shot =
+    '### Result\n- [Screenshot of viewport](.playwright-mcp\\google.png)\n### Ran Playwright code\n' +
+    "```js\n// Screenshot viewport and save it as .playwright-mcp\\google.png\n" +
+    "await page.screenshot({\n  path: '.playwright-mcp\\\\google.png',\n  scale: 'css',\n  type: 'png'\n});\n```"
+  on('tool.call', async ($, e) => ({
+    result: { content: e.tool === 'Write' ? [] : [{ type: 'text', text: shot }] },
+  }))
+  await $.tool.call({ tool: 'Write', file_path: 'E:\\Coding\\test-1.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: 'E:\\Coding\\test-2.md', content: 'x' })
+  await $.tool.call({ tool: 'mcp__playwright__browser_take_screenshot', scale: 'css', filename: '.playwright-mcp/google.png' })
+  expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(3)
+  const tree = await drawPane($)
+  expect(tree.match(/"label":"Open /g)?.length).toBe(3)
 })

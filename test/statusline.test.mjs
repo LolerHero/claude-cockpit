@@ -26,10 +26,11 @@ function run({ columns, palette, glyphs, status = {}, settings, payload = PAYLOA
       settings === 'garbage' ? '{ not json' : JSON.stringify({ pluginConfigs: { cockpit: { options: { palette, glyphs } } } }),
     )
   }
-  writeFileSync(join(cfg, 'cockpit-status.json'), JSON.stringify({ columns, files: 3, ...status }))
+  mkdirSync(join(cfg, 'cockpit'))
+  writeFileSync(join(cfg, 'cockpit', 'test-session.json'), JSON.stringify({ columns, files: 3, ...status }))
   const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg }
   delete env.WEZTERM_PANE
-  const p = { ...payload, cwd: work, workspace: { current_dir: work, project_dir: work } }
+  const p = { ...payload, session_id: 'test-session', cwd: work, workspace: { current_dir: work, project_dir: work } }
   const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(p), env, cwd: work, encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr)
   return r.stdout
@@ -106,8 +107,9 @@ test('a status file from the private cockpit (extra keys) only yields the file c
 })
 
 test("a session reads its own status file, not another session's", () => {
-  // Two sessions open: each mod writes cockpit/<session id>.json; the shared file is the
-  // fallback for a mod that does not (the private cockpit, or an older build).
+  // Two sessions open: each mod writes cockpit/<session id>.json. A session without one (the
+  // mod not loaded there) shows no count rather than another's: a shared cockpit-status.json,
+  // written by some other cockpit, once leaked its count and width into such a session.
   const dir = mkdtempSync(join(tmpdir(), 'cockpit-'))
   mkdirSync(join(dir, 'cockpit'))
   writeFileSync(join(dir, 'cockpit', 'sess-a.json'), JSON.stringify({ files: 7, columns: 144 }))
@@ -124,7 +126,8 @@ test("a session reads its own status file, not another session's", () => {
   assert.match(line('sess-a'), / 7/)
   assert.match(line('sess-a'), /Opus 5\.5/) // its own 144 columns, not b's 30
   assert.match(line('sess-b'), / 1/)
-  assert.match(line('sess-c'), / 3/) // no file of its own: the shared one
+  assert.doesNotMatch(line('sess-c'), //) // no file of its own: no count, not the shared one
+  assert.doesNotMatch(line(undefined), //) // a payload without a session id: the same
 })
 
 test('no status file at all: width falls back to 80 and the file count is omitted', () => {

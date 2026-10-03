@@ -8,7 +8,7 @@
 // THE PANE: files a tool wrote or produced this session, newest first, one key each. Only things
 // a person opens (documents, images, archives) — never source, which belongs in the editor.
 // THE STATUS FILE: the status line is a separate Node process and cannot measure the terminal or
-// count files; this module publishes both to <config dir>/cockpit-status.json on every change.
+// count files; this module publishes both to <config dir>/cockpit/<session id>.json on every change.
 //
 // The hint line under the prompt is left to the engine. Tried and dropped on 2.1.288: the hint
 // prop carries only the coaching text, the mode words are a pill no hook sees, and a rewritten

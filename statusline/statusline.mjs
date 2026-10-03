@@ -83,11 +83,10 @@ function elapsed(ms) {
 
 /** What the cockpit mod published: the file count and the width it measured. Empty when the mod
  *  has not written yet. Any other key (an older or private cockpit) is ignored.
- *  This session's own file first (`cockpit/<session id>.json`), so two open sessions do not read
- *  each other's count or width; the shared `cockpit-status.json` is the fallback. */
+ *  Only this session's own file (`cockpit/<session id>.json`): no fallback to a shared file, which
+ *  once showed another session's count and width in a session where the mod had not loaded. */
 function cockpit(sessionId) {
-  const own = typeof sessionId === 'string' && /^[\w-]+$/.test(sessionId) ? readJson(join(configDir(), 'cockpit', `${sessionId}.json`)) : null
-  const c = own ?? readJson(join(configDir(), 'cockpit-status.json'))
+  const c = typeof sessionId === 'string' && /^[\w-]+$/.test(sessionId) ? readJson(join(configDir(), 'cockpit', `${sessionId}.json`)) : null
   if (!c) return { parts: [], columns: 0 }
   const parts = typeof c.files === 'number' ? [{ text: paint('subtle', G.files + c.files), prio: 3 }] : []
   return { parts, columns: Number(c.columns) || 0 }
