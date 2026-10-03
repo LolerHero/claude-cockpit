@@ -1,0 +1,36 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  node:
+    # The status line and setup run on every platform Claude Code does; the paths, the plugin-dir
+    # separator and the git calls all differ between them, so each is run here.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test "test/*.test.mjs"
+
+  plugin:
+    # The mod against the engine it was built on. Pinned: the hooks API is young, and a new
+    # Claude Code that breaks it should fail a bump, not every push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code@2.1.288
+      - run: claude plugin validate .
+      - run: claude plugin test .
