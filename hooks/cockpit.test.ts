@@ -139,15 +139,23 @@ test('a file name outside ASCII is kept whole', () => {
 
 /** Answers the engine calls the module makes, on a disk where every file exists. `mtime` maps a
  *  file name to its modification time (default: written just now); `asked` records exists() paths. */
-const disk = (on: any, mtime: Record<string, number> = {}, asked: string[] = [], writes: string[] = []) => {
+const disk = (
+  on: any,
+  mtime: Record<string, number> = {},
+  asked: string[] = [],
+  writes: string[] = [],
+  present: (path: string) => boolean = () => true,
+  dirs = { root: CWD, cwd: CWD },
+) => {
   const NOW = 1_000_000
-  on('session.cwd', async () => ({ value: CWD }))
+  on('session.cwd', async () => ({ value: dirs.cwd }))
+  on('session.root', async () => ({ value: dirs.root }))
   on('env.get', async ($: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
   on('session.id', async () => ({ value: 'sess-a' }))
   on('clock.now', async () => ({ value: NOW }))
   on('fs.exists', async ($: unknown, e: { path: string }) => {
     asked.push(e.path)
-    return { value: true }
+    return { value: present(e.path.replace(/\\/g, '/')) }
   })
   on('fs.write', async ($: unknown, e: { text: string }) => {
     writes.push(e.text)
@@ -353,4 +361,31 @@ test('"write 2 files and take a screenshot" counts 3', async ($, on) => {
   expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(3)
   const tree = await drawPane($)
   expect(tree.match(/"label":"Open /g)?.length).toBe(3)
+})
+
+test('a relative screenshot that exists only under the project root is collected from a subfolder', async ($, on) => {
+  // Playwright MCP saves relative to ITS root (the project), while the shell had cd'd below it.
+  disk(on, {}, [], [], p => p.endsWith('/proj/shot.png'), { root: '/proj', cwd: '/proj/sub' })
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: '- [Screenshot of viewport](./shot.png)' }] } }))
+  await $.tool.call({ tool: 'mcp__playwright__browser_take_screenshot', type: 'png' })
+  expect(await drawPane($)).toContain('Open shot.png')
+})
+
+test('a deleted file leaves the count on the next tool call, even one that collected nothing', async ($, on) => {
+  const status: string[] = []
+  const gone = new Set<string>()
+  disk(on, {}, [], status, p => !gone.has(p.split('/').pop() ?? ''))
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'ok' }] } }))
+  for (const n of ['a.pdf', 'b.pdf', 'c.pdf']) await $.tool.call({ tool: 'Write', file_path: `/work/${n}`, content: 'x' })
+  expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(3)
+  gone.add('b.pdf')
+  await $.tool.call({ tool: 'Bash', command: 'rm b.pdf', description: 'delete' })
+  expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(2)
+})
+
+test("the engine's own copy of an inline screenshot is not collected", () => {
+  // The engine spills a result's image block to <session>/tool-results/mcp-playwright-blob-*.png
+  // and names it in the result; the real file is the one Playwright saved.
+  const text = '[Image: source: C:\\Users\\me\\.claude\\projects\\E--Coding\\s1\\tool-results\\mcp-playwright-blob-1791102611312-g5ctsr.png]'
+  expect(pathsIn([{ type: 'text', text }])).toEqual([])
 })

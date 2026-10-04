@@ -64,8 +64,13 @@ const publish = async ($: EngineInterface) => {
     const dir = await configDir($)
     const id = await $.session.id()
     if (!dir || !/^[\w-]+$/.test(id)) return
+    // Counts what is still on disk, and drops the rest from the list, so a deleted file leaves
+    // the count and the pane together. At most KEEP exists checks.
     const docs = await stored($)
-    await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: docs.length, columns }))
+    const gone = new Set<string>()
+    for (const doc of docs) if (!(await $.fs.exists(doc.path).catch(() => false))) gone.add(doc.path)
+    if (gone.size) await update($, files, list => list.filter(d => !gone.has(d.path)))
+    await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: docs.length - gone.size, columns }))
   } catch {
     // the status line falls back to its own width sources and omits the count
   }
@@ -88,6 +93,11 @@ const FILE_PATH = new RegExp(
   'giu',
 )
 const IS_OPENABLE = new RegExp(String.raw`\.(?:${OPENABLE})$`, 'i')
+// The engine spills an MCP result's image block to <session>/tool-results/mcp-<server>-blob-<n>-<id>.png
+// and names that copy in the result. It is a duplicate of the file the tool itself saved, kept in
+// the transcript's store: never something the person made. (Its 43-char name, cut to 40 by
+// `label`, is what showed up as `mcp-playwright-blob-…-g5ctsr` with no extension.)
+const ENGINE_BLOB = /(?:^|\/)mcp-[\w-]*-blob-\d+-\w+\.\w+$/
 
 const isAbsolute = (p: string) => /^(?:[A-Za-z]:\/|\/)/.test(p)
 
@@ -97,7 +107,19 @@ export const pathsIn = (value: unknown, cwd?: string): string[] => {
   const base = cwd?.replace(/\\/g, '/').replace(/\/+$/, '')
   // De-duplicated AFTER normalising: one file named in several escapings (Playwright's link,
   // comment and code) is one path, not three.
-  return [...new Set(found.map(p => (isAbsolute(p) || !base ? p : `${base}/${p}`)))]
+  return [...new Set(found.map(p => (isAbsolute(p) || !base ? p : `${base}/${p}`)))].filter(
+    p => !ENGINE_BLOB.test(p),
+  )
+}
+
+// A relative path is tried under each root in turn, first that exists wins: the project root
+// first (Playwright MCP saves relative to it), then the cwd (a shell `cd` moves only that one).
+const resolve = async ($: EngineInterface, path: string, roots: string[]) => {
+  const tries = isAbsolute(path) || !roots.length
+    ? [path]
+    : roots.map(root => `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${path}`)
+  for (const full of tries) if (await $.fs.exists(full).catch(() => false)) return full
+  return null
 }
 
 const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
@@ -122,24 +144,27 @@ const go = async ($: EngineInterface, to: number, row: number) => {
 // the top of the file, and refuses a module that hands it to a closure it cannot follow.
 // `since`: keep only files modified after it, so a path a command merely printed (`git status`
 // listing README.md) is not taken for one it produced. 2 s of slack for coarse file-system clocks.
-const collect = async ($: EngineInterface, paths: string[], since?: number) => {
+// Publishes even when nothing is collected: every tool call is where a deletion can have happened.
+const collect = async ($: EngineInterface, paths: string[], since?: number, roots: string[] = []) => {
   const onDisk: string[] = []
-  for (const path of paths) {
-    if (!(await $.fs.exists(path).catch(() => false))) continue
+  for (const found of paths) {
+    const path = await resolve($, found, roots)
+    if (!path) continue
     if (since !== undefined) {
       const stat = await $.fs.stat(path).catch(() => null)
       if (!stat || stat.mtimeMs < since - 2000) continue
     }
     onDisk.push(path)
   }
-  if (!onDisk.length) return
-  const at = await $.clock.now()
-  await update($, files, list => {
-    // A path produced again moves to the newest slot: a regenerated file is this session's latest
-    // output, and left in its old place a full list drops it on the next new file.
-    const kept = list.filter(d => !onDisk.includes(d.path))
-    return [...kept, ...onDisk.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
-  })
+  if (onDisk.length) {
+    const at = await $.clock.now()
+    await update($, files, list => {
+      // A path produced again moves to the newest slot: a regenerated file is this session's latest
+      // output, and left in its old place a full list drops it on the next new file.
+      const kept = list.filter(d => !onDisk.includes(d.path))
+      return [...kept, ...onDisk.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
+    })
+  }
   await publish($)
 }
 
@@ -189,9 +214,8 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const ran = await next(e)
     const path = e.file_path?.replace(/\\/g, '/')
-    if (ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)) {
-      await collect($, [path])
-    }
+    const ok = ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)
+    await collect($, ok ? [path] : [])
     return ran
   })
 
@@ -207,7 +231,8 @@ export const register: Register = (on, options) => {
       const since = await $.clock.now()
       const ran = await next(e)
       if (ran.deny !== undefined || ran.isError === true) return ran
-      await collect($, pathsIn(ran, await $.session.cwd()), since)
+      const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')]
+      await collect($, pathsIn(ran), since, roots.filter(Boolean))
       return ran
     })
   }
