@@ -116,8 +116,10 @@ const collect = async ($: EngineInterface, paths: string[], since?: number) => {
   if (!onDisk.length) return
   const at = await $.clock.now()
   await update($, files, list => {
-    const fresh = onDisk.filter(p => !list.some(d => d.path === p))
-    return [...list, ...fresh.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
+    // A path produced again moves to the newest slot: a regenerated file is this session's latest
+    // output, and left in its old place a full list drops it on the next new file.
+    const kept = list.filter(d => !onDisk.includes(d.path))
+    return [...kept, ...onDisk.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
   })
   await publish($)
 }
