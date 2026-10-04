@@ -274,13 +274,15 @@ test('l turns to page 2 and h back, the hint always in the tree', async ($, on) 
   expect(tree).toContain('2/3')
   expect(tree).toContain('Esc')
   await pane.press({ key: 'nav:l' })
-  await pane.press({ key: 'nav:l' }) // past the last page: stays
   tree = JSON.stringify(await pane.drawn())
   expect(labels(tree)).toEqual(['f4', 'f3', 'f2', 'f1'])
   expect(tree).toContain('3/3')
-  await pane.press({ key: 'nav:h' })
+  await pane.press({ key: 'nav:l' }) // past the last page: round to page 1
   tree = JSON.stringify(await pane.drawn())
-  expect(tree).toContain('2/3')
+  expect(tree).toContain('1/3')
+  await pane.press({ key: 'nav:h' }) // and back round to the last
+  tree = JSON.stringify(await pane.drawn())
+  expect(tree).toContain('3/3')
 })
 
 // The list is host state for the session id. A trip through the agent screen hands the same
@@ -427,10 +429,13 @@ test('j and k move the focus row by row, and past the edge turn the page', async
   await pane.press({ key: 'nav:j' }) // past the last row: page 2, first row
   expect(await shows()).toContain('2/2')
   await pane.press({ key: 'nav:j' }) // row 2 of page 2, the last
-  await pane.press({ key: 'nav:j' }) // the end of the list: stays
+  await pane.press({ key: 'nav:j' }) // the end of the list: round to page 1, row 1
+  expect(await shows()).toContain('1/2')
+  await pane.press({ key: 'nav:k' }) // before the first row: round to the last page's last
   expect(await shows()).toContain('2/2')
-  await pane.press({ key: 'nav:k' })
-  await pane.press({ key: 'nav:k' }) // before the first row: page 1's last
+  await pane.press({ key: 'nav:k' }) // row 1 of page 2
+  expect(await shows()).toContain('2/2')
+  await pane.press({ key: 'nav:k' }) // before it: page 1's last row
   expect(await shows()).toContain('1/2')
 })
 
@@ -785,4 +790,44 @@ test('a link opens through the URL handler on Windows, not cmd start', async ($,
   await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
   await (await mountPane($)).press({ key: 'row:0' })
   expect(ran[0]).toEqual(['rundll32', 'url.dll,FileProtocolHandler', 'https://claude.ai/artifact/a1?x=1&y=2'])
+})
+
+// ─── wrap-around (Julian, 2026-10-04) ────────────────────────────────────────────────────────
+// The harness cannot read the focus ring, and the test's own import of register.tsx is a second
+// module instance, not the one the harness runs (measured: its counters never move). The drawn
+// tree carries the position instead: `autoFocus` sits on the row the pane holds, `n/N` names the page.
+const cursorOf = async (pane: any) => {
+  const buttons = await pane.findAll({ type: 'Button' })
+  const row = buttons.find((b: any) => b.props?.autoFocus)?.props?.key ?? 'row:0'
+  const pages = /"(\d+)\/\d+"/.exec(JSON.stringify(await pane.drawn()))
+  return { page: pages ? Number(pages[1]) - 1 : 0, focused: Number(row.split(':')[1]) }
+}
+
+test('on one page, k from the first row wraps to the last row and j from the last to the first', async ($, on) => {
+  await writeMany($, on, 3)
+  const pane = await mountPane($)
+  expect(await cursorOf(pane)).toEqual({ page: 0, focused: 0 })
+  await pane.press({ key: 'nav:k' })
+  expect(await cursorOf(pane)).toEqual({ page: 0, focused: 2 })
+  await pane.press({ key: 'nav:j' })
+  expect(await cursorOf(pane)).toEqual({ page: 0, focused: 0 })
+})
+
+test('across pages, k from the first row lands on the last entry of the last page and j from there on page 1 row 1', async ($, on) => {
+  await writeMany($, on, 10) // two pages: 8 + 2
+  const pane = await mountPane($)
+  await pane.press({ key: 'nav:k' })
+  expect(await cursorOf(pane)).toEqual({ page: 1, focused: 1 })
+  expect(JSON.stringify(await pane.drawn())).toContain('2/2')
+  await pane.press({ key: 'nav:j' })
+  expect(await cursorOf(pane)).toEqual({ page: 0, focused: 0 })
+})
+
+test('h on page 1 turns to the last page, l on the last page to page 1', async ($, on) => {
+  await writeMany($, on, 10)
+  const pane = await mountPane($)
+  await pane.press({ key: 'nav:h' })
+  expect(await cursorOf(pane)).toEqual({ page: 1, focused: 0 })
+  await pane.press({ key: 'nav:l' })
+  expect(await cursorOf(pane)).toEqual({ page: 0, focused: 0 })
 })

@@ -483,25 +483,24 @@ export const register: Register = (on, options) => {
     // it: the hint fell off and the arrows scrolled instead of walking.
     const body = e.props?.scroll?.bodyRows ?? Infinity
     const perPage = Math.max(1, Math.min(PER_PAGE, body - 1))
-    const pages = Math.ceil(list.length / perPage)
+    // The pages are cut from `pool`, newest first.
+    const pool = list.slice().reverse()
+    const pages = Math.ceil(pool.length / perPage)
     page = Math.min(page, pages - 1) // a file deleted since can shorten the list under us
-    const shown = list
-      .slice()
-      .reverse()
-      .slice(page * perPage, (page + 1) * perPage)
+    const shown = pool.slice(page * perPage, (page + 1) * perPage)
     const last = shown.length - 1
+    focused = Math.min(focused, Math.max(0, last)) // a shorter page than the one the ring was on
+    const lastRow = (p: number) => Math.min(perPage, pool.length - p * perPage) - 1
 
     // j past the last row turns to the next page's first; k before the first, to the previous
-    // page's last. At the list's two ends they stay put.
-    const down = () =>
-      focused < last ? go($, page, focused + 1) : page < pages - 1 ? go($, page + 1, 0) : undefined
-    const up = () =>
-      focused > 0
-        ? go($, page, focused - 1)
-        : page > 0
-          ? go($, page - 1, perPage - 1)
-          : undefined
-    const turn = (to: number) => () => (to >= 0 && to < pages ? go($, to, 0) : undefined)
+    // page's last. The list is a ring (Julian, 2026-10-04): past either end it comes round, j
+    // from the last entry to page 1's first row, k from the first to the last page's last.
+    const down = () => (focused < last ? go($, page, focused + 1) : go($, (page + 1) % pages, 0))
+    const up = () => {
+      const p = focused > 0 ? page : (page - 1 + pages) % pages
+      return go($, p, focused > 0 ? focused - 1 : lastRow(p))
+    }
+    const turn = (to: number) => () => go($, (to + pages) % pages, 0)
 
     // A thing that opened takes the person to another app; the pane closes behind it, so they do
     // not come back to a dialog they have to dismiss. A failed open keeps it to pick again.
@@ -556,14 +555,15 @@ export const register: Register = (on, options) => {
         {shown.map((entry, i) => (
           // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
           // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
-          // Keyed by position: `row:N` is what `go` focuses after a page turn. The muted tail
-          // says where the thing is, which tells two files of one name apart.
+          // Keyed by position: `row:N` is what `go` focuses after a page turn. The ring starts on
+          // the row the pane holds (`go` focuses the same one), so a redraw keeps it. The muted
+          // tail says where the thing is, which tells two files of one name apart.
           <Box key={`line:${i}`} flexDirection="row" columnGap={1}>
             <Button
               key={`row:${i}`}
               plain
               hotkey={String(i + 1)}
-              autoFocus={i === 0 ? true : undefined}
+              autoFocus={i === focused ? true : undefined}
               onPress={open(entry)}
             >
               {`${MARK[entry.kind]} ${entry.label}`}
