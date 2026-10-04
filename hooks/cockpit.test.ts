@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, linksIn, foldersIn, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, foldersIn, fuzzy, fuzzyScore, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -830,4 +830,17 @@ test('h on page 1 turns to the last page, l on the last page to page 1', async (
   expect(await cursorOf(pane)).toEqual({ page: 1, focused: 0 })
   await pane.press({ key: 'nav:l' })
   expect(await cursorOf(pane)).toEqual({ page: 0, focused: 0 })
+})
+
+// ─── fuzzy ───────────────────────────────────────────────────────────────────────────────────
+
+test('fuzzy: subsequence match, consecutive runs and word starts score higher, ties go to the newer entry', () => {
+  const e = (label: string, tail: string, at: number) => ({ label, tail, at })
+  const entries = [e('home-1440.png', 'shots', 1), e('report-2026.pdf', 'out', 2), e('Rechnung-März.pdf', 'invoices', 3)]
+  expect(fuzzy('rep', entries).map(x => x.label)).toEqual(['report-2026.pdf', 'Rechnung-März.pdf'])
+  expect(fuzzy('pdf', entries).map(x => x.label)).toEqual(['Rechnung-März.pdf', 'report-2026.pdf']) // same score, newer first
+  expect(fuzzy('xyz', entries)).toEqual([])
+  expect(fuzzy('', entries).map(x => x.at)).toEqual([3, 2, 1])
+  expect(fuzzy('inv', entries).map(x => x.label)).toEqual(['Rechnung-März.pdf']) // the tail counts
+  expect(fuzzyScore('3030', 'localhost:3030 localhost:3030')).toBeGreaterThan(fuzzyScore('3030', 'home-3-0-3-0.png')!)
 })

@@ -225,6 +225,32 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
   return [...new Set(out.map(norm))]
 }
 
+// fzf-flavoured: every query char in order; +3 for continuing a run, +2 at a word start, +1 elsewhere.
+// ponytail: greedy leftmost positions, not the best alignment; good enough for 48 short rows.
+const WORD_START = /[\s/\-_.:]/
+export const fuzzyScore = (query: string, text: string): number | null => {
+  const q = query.toLowerCase()
+  const t = text.toLowerCase()
+  let score = 0
+  let from = 0
+  let prev = -2
+  for (const ch of q) {
+    const at = t.indexOf(ch, from)
+    if (at < 0) return null
+    score += at === prev + 1 ? 3 : at === 0 || WORD_START.test(t[at - 1] ?? '') ? 2 : 1
+    prev = at
+    from = at + 1
+  }
+  return score
+}
+// Best first, ties newest first; an empty query is the list newest first. Label and tail both count.
+export const fuzzy = <E extends { label: string; tail: string; at: number }>(query: string, entries: E[]): E[] =>
+  entries
+    .map(e => ({ e, s: fuzzyScore(query, `${e.label} ${e.tail}`) }))
+    .filter((x): x is { e: E; s: number } => x.s !== null)
+    .sort((a, b) => b.s - a.s || b.e.at - a.e.at)
+    .map(x => x.e)
+
 // The kind, one glyph a row: a file, a link out, a folder in.
 const MARK: Record<EntryKind, string> = { file: '▪', link: '↗', folder: '▸' }
 
