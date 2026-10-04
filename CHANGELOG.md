@@ -3,6 +3,14 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.3 — 2026-10-04
+
+Tested against Claude Code 2.1.289.
+
+- When the pane sits inline with fewer rows than a page wants, its one-row hint ends in
+  `ctrl+x ↑ more`: Claude Code's own `pane:grow` key. The pane's height request loses to a size
+  you keyed earlier, which the engine keeps, so only that key can undo it.
+
 ## v0.2.2 — 2026-10-04
 
 Tested against Claude Code 2.1.289.
