@@ -3,6 +3,14 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.4 — 2026-10-04
+
+Tested against Claude Code 2.1.289.
+
+- The `ctrl+x ↑ more` hint from v0.2.3 is gone. `pane:grow` heightens an inline pane only up to
+  the terminal's rows less the prompt's and the transcript's (8 and 3), so in the short window
+  where the hint showed, the key had no room to give; docked, it widens instead.
+
 ## v0.2.3 — 2026-10-04
 
 Tested against Claude Code 2.1.289.

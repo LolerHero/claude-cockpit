@@ -1,6 +1,6 @@
 {
   "name": "cockpit",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A denser Claude Code status line and a pane of the files, links and folders this session produced, with a fuzzy filter and a palette picker.",
   "author": { "name": "Julian Hansen" },
   "license": "MIT",
