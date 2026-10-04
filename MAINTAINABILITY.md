@@ -23,26 +23,28 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 
 ## Current scoring
 
-*Scored 2026-10-03; re-scored 2026-10-04 after CI (category 3) and the v0.1.0 release (category 9).*
+*Scored 2026-10-03; re-scored 2026-10-04 after CI (category 3) and the v0.1.0 release (category 9); re-scored 2026-10-04 for v0.2.0 (categories 3 and 4).*
 
 | # | Category | Score | Why |
 |---|---|---|---|
 | 1 | Onboarding documentation | 4 | README covers install, palettes and how it works; a setup script wires everything. No first-change walkthrough. |
 | 2 | Inline code documentation | 4 | Every module opens with its purpose; the non-obvious choices (Windows path escaping, why `$.env`, the drop order) carry their reason. |
-| 3 | Test coverage of critical paths | 4 | Palettes, the status line (width, palettes, glyphs, bad input, per-session status), setup (pure plan + real runs) and the pane (drawing, collection, counts, the dialog's rows) are covered, gated by CI on Linux, macOS and Windows plus the plugin tests on the pinned engine. Hotkey presses and the opener are not. |
-| 4 | Type safety | 3 | The mod is typed against the engine's laid types; `tsc` still reports a handful of build-specific errors (tool matcher union depth, an index access). `palettes.js` carries a `.d.ts`. |
+| 3 | Test coverage of critical paths | 5 | Palettes, the status line (width, palettes, glyphs, bad input, per-session status), setup (pure plan + real runs), the extractors (`pathsIn`, `linksIn`, `foldersIn`, `fuzzy`) and the pane (drawing, collection by kind, counts, the dialog's rows, presses on rows and on `o`, the opener's commands, wrap-around, the filter field's input and Enter) are covered, gated by CI on Linux, macOS and Windows plus the plugin tests on the pinned engine. The one path the harness cannot raise is the person's Esc (`ui.close`); it is on the manual check list. |
+| 4 | Type safety | 5 | `tsc --noEmit` clean (2026-10-04) against the engine's laid types; no `any` outside the test helpers' `on` parameter. `palettes.js` carries a `.d.ts`. |
 | 5 | Architectural consistency | 4 | One pattern per concern: the mod owns engine state, the status line reads one JSON file, both share one palette table. |
 | 6 | Dependency hygiene | 5 | No dependencies. Node's own test runner. |
 | 7 | Database migration discipline | 5 | No database. |
 | 8 | Configuration & secrets | 5 | Nothing secret. The two options live in the manifest's `userConfig` and Claude Code's config menu; setup writes the same keys. |
 | 9 | Build & deploy reproducibility | 5 | Nothing to build; one command installs (`node setup.mjs`), with a dry run and a backup. Releases are tagged with the Claude Code build they were tested against (CHANGELOG.md), so a user can pin one. |
 | 10 | Error handling & observability | 3 | The status line swallows on purpose (a throwing status line goes blank) and degrades segment by segment; setup refuses a settings.json it cannot parse; the pane toasts a failed open. No logging. |
-| | **Total** | **42 / 50** | At the buyer-ready threshold, no category below 3. |
+| | **Total** | **45 / 50** | Above the buyer-ready threshold, no category below 3. |
 
 ## Next-move targets
 
-1. **Test the pane's presses**: a press on a hotkey runs the opener, and a non-zero exit shows a toast.
-   This is category 3, from 4 to 5.
+1. **A first-change walkthrough** in the README (where a new source of entries goes, which test to
+   copy). Category 1, from 4 to 5.
+2. **A debug line** behind an option for a refused tree or a skipped hook, so a user can report
+   one without `--debug`. Category 10, from 3 to 4.
 
 ## Known gaps
 
@@ -56,7 +58,10 @@ Small, known, and deliberately left. Each is cheap to fix when it starts to matt
 - The image preview draws only in kitty and Ghostty. Other terminals get a line saying so.
 - `/files` and `ctrl+x f` wait while a turn is running: Claude Code runs a slash command once the session is idle.
 - `~/.claude/cockpit/` keeps one small status file per session and never prunes them.
-- `tsc` still reports build-specific errors (TS18048, TS2322, TS2589, TS5097), which is why type safety is at 3.
+- The fuzzy score takes the leftmost positions, not the best alignment; good enough for 48 short rows.
+- A `mkdir` behind `cd x &&` is taken relative to the session's cwd, not `x`, and is dropped when it does not exist there.
+- The filter field is drawn on the terminal, desktop and VS Code surfaces; the mobile surface has no `Input`, so `f` does nothing there.
+- The person's Esc while filtering is answered by a `ui.close` hook; the test harness (2.1.289) cannot raise `ui.close`, so that path is checked by hand per release.
 
 ## Releasing
 

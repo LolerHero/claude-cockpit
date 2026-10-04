@@ -3,16 +3,37 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
-## Unreleased
+## v0.2.0 — 2026-10-04
 
-- `/files` pane: keeps 32 files, eight to a page. `h`/`l` turn the page, `j`/`k` move the selection and
-  cross pages at the edges, `1`–`8` open a row (letters are no longer row keys). The hint line
-  is always drawn, and the pane asks at most one page of rows (20 with a PNG preview), so it never
-  outgrows the terminal. A stored list longer than 32 is trimmed when read.
-- The pane closes itself once a file has opened; a failed open keeps it and says why.
-- Below 110 columns (the pane sits above the prompt) a page is as long as the rows the terminal grants, so the hint and the keys keep working; the image preview gives way first.
-- One file reached as `e:` and `E:` is one row; two files with the same name show their folder (`button.md · contracts`).
-- An empty list is rebuilt from the transcript when the pane opens and at session start (Write calls and screenshots): a trip through the agent screen gives the same conversation a new session id and an empty plugin state.
+Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
+
+- The `/files` pane is a session hub: files, links and folders this session produced, in one
+  list, newest first, the newest 48 kept. Links come from artifact publishes, `gh pr|issue|release
+  create`, deploy tools (`mcp__*deploy*`), dev servers a command started (`localhost`,
+  `127.0.0.1`, a LAN address with a port; `0.0.0.0` reads as `localhost`), and from the reply as
+  it streams when a link stands alone on its line or its line has an open word. Folders come
+  from `mkdir` and `git worktree add`, and from an absolute path alone on a reply line.
+- Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and a muted tail: the file's
+  folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
+  files is gone; the tail tells them apart.
+- `o` opens the folder the row sits in (a folder opens itself; a link says it has none).
+- `j`/`k` and `h`/`l` wrap around: past either end of the list or the pages they come round.
+- `f` finds: a field at the top, fuzzy over the name and the tail, Enter opens the top match,
+  Esc returns to the list (Esc in the list closes the pane). The PNG preview hides while filtering.
+- `openWords` option (default `open, öffne, ansehen, view, review`): the words that make a
+  link in a reply's prose count.
+- A URL opens through the URL handler on Windows (`rundll32 url.dll,FileProtocolHandler`), not
+  `cmd /c start`, which re-parses an `&` in a query string.
+- The status-line count stays files only; links and folders are not counted.
+- An empty list is rebuilt from the transcript with links and reply folders too.
+- `tsc --noEmit` is clean (the test import extension, one unmatched `tool.call` hook instead of a
+  matcher loop, the newest entry narrowed).
+- From the unreleased work before this release: eight rows a page with `h`/`l`, `j`/`k` and
+  `1`–`8`; the hint line always drawn and the dialog never taller than the terminal; the pane
+  closes itself once a thing has opened (a failed open keeps it and says why); inline below 110
+  columns a page is as long as the rows granted; one row per file whatever the drive letter's case;
+  an empty list is rebuilt from the transcript after the agent screen hands the conversation a new
+  session id.
 
 ## v0.1.0 — 2026-10-04
 
