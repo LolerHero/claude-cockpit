@@ -154,6 +154,7 @@ type Found = { kind: EntryKind; target: string }
 const link = (target: string): Found => ({ kind: 'link', target })
 // A `gh … create` prints the URL of the thing it made; any other Bash output's URLs are noise.
 const GH_CREATE = /\bgh\s+(?:pr|issue|release)\s+create\b/
+const DEPLOY_TOOL = /^mcp__.*deploy/i
 
 // What a tool answered, as text: `text` when the engine flattened it; a Bash result's stdout and
 // stderr; an MCP result's text blocks; else the result as JSON. Not JSON for the first three: a
@@ -427,41 +428,32 @@ export const register: Register = (on, options) => {
     return ran
   })
 
-  // Everything else: read the answer, keep what is openable AND on disk. Bash is here because
-  // the scripts that produce the real artefacts — invoices, reports — are run, not written.
-  // A Bash call also yields dev-server addresses from its output (every URL when it is a
-  // `gh … create`, whose output is the thing made) and the folders its command made.
-  for (const tool of ['Bash', ...SCREENSHOT_TOOLS]) {
-    on('tool.call', { tool }, async ($, e, next) => {
-      const since = await $.clock.now()
-      const ran = await next(e)
-      if (ran.deny !== undefined || ran.isError === true) return ran
-      const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')]
-      const found: Found[] = pathsIn(ran).map(target => ({ kind: 'file', target }))
-      if (e.tool === 'Bash') {
-        const command = (e as { command?: unknown }).command
-        const cmd = typeof command === 'string' ? command : ''
-        found.push(...linksIn(textOf(ran), GH_CREATE.test(cmd) ? 'tool' : 'servers').map(link))
-        found.push(...foldersIn(cmd, 'command').map(target => ({ kind: 'folder' as const, target })))
-      }
-      await collect($, found, since, roots.filter(Boolean))
-      return ran
-    })
-  }
-
-  // A published artifact: its answer names the URL a person opens.
-  on('tool.call', { tool: 'Artifact' }, async ($, e, next) => {
+  // Everything else, one hook with no matcher (a matcher over a list of names sent tsc into
+  // TS2589): read the answer, keep what is openable AND on disk. Bash is here because the
+  // scripts that produce the real artefacts — invoices, reports — are run, not written; it also
+  // yields dev-server addresses from its output (every URL when it is a `gh … create`, whose
+  // output is the thing made) and the folders its command made. A screenshot tool names the
+  // file it saved. A published artifact and a deploy tool of any MCP server name a URL.
+  on('tool.call', async ($, e, next) => {
+    const since = await $.clock.now()
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError === true) return ran
-    await collect($, linksIn(textOf(ran), 'tool').map(link))
-    return ran
-  })
-
-  // A deploy tool of any MCP server: its answer names what went live.
-  on('tool.call', async ($, e, next) => {
-    const ran = await next(e)
-    if (!/^mcp__.*deploy/i.test(e.tool) || ran.deny !== undefined || ran.isError === true) return ran
-    await collect($, linksIn(textOf(ran), 'tool').map(link))
+    const producesFiles = e.tool === 'Bash' || SCREENSHOT_TOOLS.includes(e.tool)
+    const producesLinks = e.tool === 'Artifact' || DEPLOY_TOOL.test(e.tool)
+    if (!producesFiles && !producesLinks) return ran
+    const found: Found[] = []
+    const roots: string[] = []
+    if (producesFiles) {
+      roots.push(await $.session.root().catch(() => ''), await $.session.cwd().catch(() => ''))
+      found.push(...pathsIn(ran).map(target => ({ kind: 'file' as const, target })))
+    }
+    if (e.tool === 'Bash') {
+      const cmd = typeof e.command === 'string' ? e.command : ''
+      found.push(...linksIn(textOf(ran), GH_CREATE.test(cmd) ? 'tool' : 'servers').map(link))
+      found.push(...foldersIn(cmd, 'command').map(target => ({ kind: 'folder' as const, target })))
+    }
+    if (producesLinks) found.push(...linksIn(textOf(ran), 'tool').map(link))
+    await collect($, found, since, roots.filter(Boolean))
     return ran
   })
 
@@ -494,13 +486,13 @@ export const register: Register = (on, options) => {
       page = 0
       focused = 0
       $.ui.invalidate('ui.render')
-      return
+      return { value: undefined } // answered here: the pane stays
     }
     return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const all = await stored($)
 
     // Only what is still on disk: a file can be deleted or moved after it was collected, and a
@@ -513,15 +505,15 @@ export const register: Register = (on, options) => {
     )
     const list = checked.filter((entry): entry is Entry => entry !== null)
 
-    if (!list.length) {
+    // The newest entry doubles as the empty check: `noUncheckedIndexedAccess` types it undefined.
+    const newest = list[list.length - 1]
+    if (!newest) {
       return (
         <Box flexDirection="column">
           <Text color={palette.subtle}>Nothing to open yet this session.</Text>
         </Box>
       )
     }
-
-    const newest = list[list.length - 1]
     // A page is as long as the body the surface granted, less the hint row. Docked (fullscreen
     // from 110 columns) that is floor to ceiling; inline above the prompt it is what the layout
     // spares, which a wrapped prompt shortens. A page taller than the body made the engine scroll
@@ -579,22 +571,27 @@ export const register: Register = (on, options) => {
 
     // The field, while filtering. Its text is drawn back on every change, so a redraw (a new
     // entry arriving) does not empty it. Enter opens the best match; nothing when there is none.
-    const header = filtering ? (
-      <Input
-        key="q"
-        label="find"
-        value={query}
-        placeholder="type to filter · Enter opens the top match · Esc back"
-        autoFocus
-        onInput={value => {
-          query = value
-          page = 0
-          focused = 0
-          $.ui.invalidate('ui.render')
-        }}
-        onSubmit={() => (pool[0] ? open(pool[0])() : undefined)}
-      />
-    ) : null
+    // Resolved under the surfaces that have an `Input` (mobile does not), as `Image` is below.
+    let header = null
+    if (filtering && (e.surface === 'terminal' || e.surface === 'desktop' || e.surface === 'vscode')) {
+      const { Input } = $.ui.resolve(e)
+      header = (
+        <Input
+          key="q"
+          label="find"
+          value={query}
+          placeholder="type to filter · Enter opens the top match · Esc back"
+          autoFocus
+          onInput={(value: string) => {
+            query = value
+            page = 0
+            focused = 0
+            $.ui.invalidate('ui.render')
+          }}
+          onSubmit={() => (pool[0] ? open(pool[0])() : undefined)}
+        />
+      )
+    }
 
     let inline = null
     // The newest file only, on page 1 only, and not while filtering (the list needs the rows):

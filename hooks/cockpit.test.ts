@@ -178,6 +178,9 @@ const disk = (
 // `openerFor` reads USERPROFILE as the Windows sign; the opener commands are asserted on it.
 const WINDOWS = { CLAUDE_CONFIG_DIR: '/cfg', USERPROFILE: 'C:/Users/me' }
 
+// What `$.process.run` answers: the opener ran and exited so.
+const exited = (exitCode: number) => ({ exitCode, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+
 const mountPane = ($: any) =>
   $.ui.mount({ plugin: 'cockpit', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'files' })
 
@@ -380,7 +383,7 @@ test('inline, the image preview is left out before any row is', async ($, on) =>
 const pressOpen = async ($: any, on: any, exitCode: number) => {
   const closed: string[] = []
   const toasts: string[] = []
-  on('process.run', async () => ({ value: { exitCode, stdout: '', stderr: '' } }))
+  on('process.run', async () => ({ value: exited(exitCode) }))
   on('ui.close', async ($: unknown, e: { id: string }) => {
     closed.push(e.id)
     return { value: undefined }
@@ -643,7 +646,7 @@ test('gh pr create output yields its URL; a plain Bash with a docs URL yields no
   disk(on)
   const list = watchState(on)
   on('tool.call', async ($, e) => ({
-    result: { stdout: String(e.command).startsWith('gh') ? 'https://github.com/o/r/pull/7\n' : 'see https://docs.npmjs.com/x\n', stderr: '' },
+    result: { stdout: String((e as { command?: unknown }).command).startsWith('gh') ? 'https://github.com/o/r/pull/7\n' : 'see https://docs.npmjs.com/x\n', stderr: '' },
   }))
   await $.tool.call({ tool: 'Bash', command: 'npm install' })
   await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
@@ -654,7 +657,7 @@ test('mkdir collects the folder once it exists; a failed mkdir collects nothing'
   disk(on, {}, [], [], p => p !== '/work/never')
   const list = watchState(on)
   on('tool.call', async ($, e) =>
-    String(e.command).includes('never') ? { result: { stdout: '', stderr: 'denied' }, isError: true } : { result: { stdout: '' } },
+    String((e as { command?: unknown }).command).includes('never') ? { result: { stdout: '', stderr: 'denied' }, isError: true } : { result: { stdout: '' } },
   )
   await $.tool.call({ tool: 'Bash', command: 'mkdir -p /work/out/reports' })
   await $.tool.call({ tool: 'Bash', command: 'mkdir /work/never' })
@@ -751,9 +754,9 @@ test('o on a file opens its folder; on a folder, itself; on a link, a toast', as
   const ran: string[][] = []
   const toasts: string[] = []
   disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
-  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+  on('process.run', async ($: unknown, e: { argv: readonly string[] }) => {
     ran.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+    return { value: exited(0) }
   })
   on('ui.toast', async ($: unknown, e: { text: string }) => {
     toasts.push(e.text)
@@ -781,9 +784,9 @@ test('o on a file opens its folder; on a folder, itself; on a link, a toast', as
 test('a link opens through the URL handler on Windows, not cmd start', async ($, on) => {
   const ran: string[][] = []
   disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
-  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+  on('process.run', async ($: unknown, e: { argv: readonly string[] }) => {
     ran.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+    return { value: exited(0) }
   })
   on('ui.close', async () => ({ value: undefined }))
   on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'https://claude.ai/artifact/a1?x=1&y=2' }] } }))
@@ -853,9 +856,9 @@ test('f draws the search Input; typing filters the rows; Enter opens the top mat
   const ran: string[][] = []
   const closed: string[] = []
   disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
-  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+  on('process.run', async ($: unknown, e: { argv: readonly string[] }) => {
     ran.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+    return { value: exited(0) }
   })
   on('ui.close', async ($: unknown, e: { id: string }) => {
     closed.push(e.id)
@@ -881,9 +884,9 @@ test('f draws the search Input; typing filters the rows; Enter opens the top mat
 test('no match says so; Enter on no match opens nothing', async ($, on) => {
   const ran: string[][] = []
   disk(on)
-  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+  on('process.run', async ($: unknown, e: { argv: readonly string[] }) => {
     ran.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+    return { value: exited(0) }
   })
   on('tool.call', async () => ({ result: { content: [] } }))
   await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
