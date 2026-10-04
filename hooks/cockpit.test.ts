@@ -369,14 +369,6 @@ test('inline with few rows, a page is as long as the rows granted, the hint stil
   expect(tree).not.toContain('Esc closes')
 })
 
-test('inline, rows cut by height name the key that grows the pane; a page that fits does not', async ($, on) => {
-  await writeMany($, on, 20)
-  const tight = await mountInline($, 5)
-  expect(JSON.stringify(await tight.drawn())).toContain('ctrl+x ↑ more')
-  await tight.unmount()
-  expect(JSON.stringify(await (await mountInline($, 10)).drawn())).not.toContain('ctrl+x ↑')
-})
-
 test('inline, the image preview is left out before any row is', async ($, on) => {
   disk(on)
   on('tool.call', async () => ({ result: { content: [] } }))

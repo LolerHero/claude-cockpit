@@ -772,13 +772,6 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" columnGap={1}>
               {acts}
               {walk}
-              {/* Fewer rows than a page wants: the engine's own pane:grow key, the size it keeps.
-                  A request (`rows`) loses to a size the person keyed, so only they can undo it. */}
-              {e.props?.placement === 'inline' && perPage < Math.min(PER_PAGE, pool.length) ? (
-                <Text dimColor wrap="truncate-end">
-                  ctrl+x ↑ more
-                </Text>
-              ) : null}
             </Box>
           )
         })()}
