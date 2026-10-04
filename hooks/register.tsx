@@ -17,11 +17,11 @@
 import { atom, read, update } from 'claude-code'
 import type { Register, EngineInterface } from 'claude-code'
 
-import type { Doc } from '../types'
+import type { Doc, Entry, EntryKind } from '../types'
 import { paletteOf } from '../palettes.js'
 
 const PANE = 'files'
-export const KEEP = 32
+export const KEEP = 48
 // One page is what the dialog asks rows for, whatever the list holds: a dialog taller than the
 // terminal pushed every redraw (spinner ticks) into scrollback, stacking copies over the chat.
 export const PER_PAGE = 8
@@ -34,9 +34,13 @@ export const IMAGE_ROWS = 10 // the inline preview's height in cells; `openPane`
 
 const files = atom({ plugin: 'cockpit', key: 'files' } as const, [])
 
+// Legacy rows (`{ path }`, before v0.2.0) are read as files: the state outlives an update of the module.
+const asEntry = (d: Entry | Doc): Entry =>
+  'target' in d ? d : { kind: 'file', target: d.path, label: d.label, tail: tailOf('file', d.path), at: d.at }
+
 // Trimmed on read, not only on the next write: a session that stored more under an older, larger
 // KEEP showed all of it until a new file came in.
-const stored = async ($: EngineInterface) => (await read($, files)).slice(-KEEP)
+const stored = async ($: EngineInterface) => (await read($, files)).slice(-KEEP).map(asEntry)
 
 // Which page the pane shows and which row on it holds the focus ring. Module-level: a reload
 // starts on page 1, which is where a reopened pane starts anyway.
@@ -65,12 +69,17 @@ const publish = async ($: EngineInterface) => {
     const id = await $.session.id()
     if (!dir || !/^[\w-]+$/.test(id)) return
     // Counts what is still on disk, and drops the rest from the list, so a deleted file leaves
-    // the count and the pane together. At most KEEP exists checks.
+    // the count and the pane together. At most KEEP exists checks. Links are taken as given.
+    // The count is files only: links and folders are not "files this session made".
     const docs = await stored($)
     const gone = new Set<string>()
-    for (const doc of docs) if (!(await $.fs.exists(doc.path).catch(() => false))) gone.add(doc.path)
-    if (gone.size) await update($, files, list => list.filter(d => !gone.has(d.path)))
-    await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: docs.length - gone.size, columns }))
+    for (const e of docs) {
+      if (e.kind === 'link') continue
+      if (!(await $.fs.exists(e.target).catch(() => false))) gone.add(e.target)
+    }
+    if (gone.size) await update($, files, list => list.map(asEntry).filter(e => !gone.has(e.target)))
+    const fileCount = docs.filter(e => e.kind === 'file' && !gone.has(e.target)).length
+    await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: fileCount, columns }))
   } catch {
     // the status line falls back to its own width sources and omits the count
   }
@@ -128,8 +137,25 @@ const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
 const sameDrive = (path: string) => path.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`)
 // The folder a file sits in, for telling two files of one name apart.
 const folderOf = (path: string) => path.split('/').slice(-2, -1)[0] ?? ''
+const hostOf = (url: string) => url.replace(/^https?:\/\//, '').split(/[/?#]/)[0] ?? url
+const parentOf = (path: string) => path.split('/').slice(0, -1).join('/')
+// The muted tail of a row: where the thing is, in the words that tell two of a name apart.
+export const tailOf = (kind: EntryKind, target: string) =>
+  kind === 'file' ? folderOf(target) : kind === 'link' ? hostOf(target) : parentOf(target)
+const labelOf = (kind: EntryKind, target: string) =>
+  kind === 'link' ? target.replace(/^https?:\/\//, '').slice(0, 40) : label(target)
 // PNG only: the terminal's Image takes PNG data, and anything else refuses the WHOLE pane.
 const isPng = (path: string) => /\.png$/i.test(path)
+
+type Found = { kind: EntryKind; target: string }
+
+// What a tool answered, as text: `text` when the engine flattened it, else the result as JSON.
+const textOf = (ran: { text?: unknown; result?: unknown }) =>
+  typeof ran.text === 'string' ? ran.text : JSON.stringify(ran.result ?? ran ?? '')
+
+// Task 2 replaces this with the real one (modes, dev servers, open words).
+export const linksIn = (text: string, _mode: 'tool' | 'servers' | 'reply', _openWords: string[] = []): string[] =>
+  [...new Set((text.match(/https?:\/\/[^\s<>()"'\]]+/g) ?? []).map(u => u.replace(/[.,;:!?)\]]+$/, '')))]
 
 // A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
 // it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the
@@ -150,25 +176,31 @@ const go = async ($: EngineInterface, to: number, row: number) => {
 // `since`: keep only files modified after it, so a path a command merely printed (`git status`
 // listing README.md) is not taken for one it produced. 2 s of slack for coarse file-system clocks.
 // Publishes even when nothing is collected: every tool call is where a deletion can have happened.
-const collect = async ($: EngineInterface, paths: string[], since?: number, roots: string[] = []) => {
-  const onDisk: string[] = []
-  for (const found of paths) {
-    const resolved = await resolve($, found, roots)
-    if (!resolved) continue
-    const path = sameDrive(resolved)
-    if (since !== undefined) {
-      const stat = await $.fs.stat(path).catch(() => null)
-      if (!stat || stat.mtimeMs < since - 2000) continue
+// Files and folders must exist (a folder must be a directory); links are taken as given.
+const collect = async ($: EngineInterface, found: Found[], since?: number, roots: string[] = []) => {
+  const keep: Found[] = []
+  for (const f of found) {
+    if (f.kind === 'link') {
+      keep.push(f)
+      continue
     }
-    onDisk.push(path)
+    const resolved = await resolve($, f.target, roots)
+    if (!resolved) continue
+    const target = sameDrive(resolved)
+    const stat = await $.fs.stat(target).catch(() => null)
+    if (f.kind === 'folder' && stat?.kind !== 'dir') continue
+    if (f.kind === 'file' && since !== undefined && (!stat || stat.mtimeMs < since - 2000)) continue
+    keep.push({ kind: f.kind, target })
   }
-  if (onDisk.length) {
+  if (keep.length) {
     const at = await $.clock.now()
     await update($, files, list => {
-      // A path produced again moves to the newest slot: a regenerated file is this session's latest
-      // output, and left in its old place a full list drops it on the next new file.
-      const kept = list.filter(d => !onDisk.includes(sameDrive(d.path)))
-      return [...kept, ...onDisk.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
+      // A target produced again moves to the newest slot: a regenerated file is this session's
+      // latest output, and left in its old place a full list drops it on the next new file.
+      const targets = new Set(keep.map(k => k.target))
+      const kept = list.map(asEntry).filter(e => !targets.has(e.target))
+      const fresh = keep.map(k => ({ ...k, label: labelOf(k.kind, k.target), tail: tailOf(k.kind, k.target), at }))
+      return [...kept, ...fresh].slice(-KEEP)
     })
   }
   await publish($)
@@ -189,15 +221,16 @@ const rebuild = async ($: EngineInterface) => {
   try {
     const messages = await $.session.messages()
     const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')].filter(Boolean)
-    const found: string[] = []
+    const found: Found[] = []
+    const file = (target: string): Found => ({ kind: 'file', target })
     for (const m of messages) {
       for (const use of m.toolUses ?? []) {
         if (use.isError) continue
         if (use.tool === 'Write' && typeof use.input?.file_path === 'string') {
           const path = use.input.file_path.replace(/\\/g, '/')
-          if (IS_OPENABLE.test(path)) found.push(path)
+          if (IS_OPENABLE.test(path)) found.push(file(path))
         } else if (SCREENSHOT_TOOLS.includes(use.tool)) {
-          found.push(...pathsIn(use.result ?? use.text ?? ''))
+          found.push(...pathsIn(use.result ?? use.text ?? '').map(file))
         }
       }
     }
@@ -221,7 +254,7 @@ const openPane = async ($: EngineInterface) => {
   const newest = list[list.length - 1]
   page = 0
   focused = 0
-  const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + 1 + (newest && isPng(newest.path) ? IMAGE_ROWS + 1 : 0)
+  const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + 1 + (newest && isPng(newest.target) ? IMAGE_ROWS + 1 : 0)
   await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true, rows })
 }
 
@@ -260,7 +293,7 @@ export const register: Register = (on, options) => {
     const ran = await next(e)
     const path = e.file_path?.replace(/\\/g, '/')
     const ok = ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)
-    await collect($, ok ? [path] : [])
+    await collect($, ok ? [{ kind: 'file', target: path }] : [])
     return ran
   })
 
@@ -272,10 +305,19 @@ export const register: Register = (on, options) => {
       const ran = await next(e)
       if (ran.deny !== undefined || ran.isError === true) return ran
       const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')]
-      await collect($, pathsIn(ran), since, roots.filter(Boolean))
+      const found: Found[] = pathsIn(ran).map(target => ({ kind: 'file', target }))
+      await collect($, found, since, roots.filter(Boolean))
       return ran
     })
   }
+
+  // A published artifact: its answer names the URL a person opens.
+  on('tool.call', { tool: 'Artifact' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.deny !== undefined || ran.isError === true) return ran
+    await collect($, linksIn(textOf(ran), 'tool').map(target => ({ kind: 'link' as const, target })))
+    return ran
+  })
 
   // No band of its own: the hook only measures the width for the status line, then lets the
   // engine draw whatever belongs there.
@@ -303,10 +345,13 @@ export const register: Register = (on, options) => {
 
     // Only what is still on disk: a file can be deleted or moved after it was collected, and a
     // button that opens nothing reads as the mod being broken rather than as a missing file.
+    // A link is never checked: there is no disk to ask.
     const checked = await Promise.all(
-      all.map(async doc => ((await $.fs.exists(doc.path).catch(() => false)) ? doc : null)),
+      all.map(async entry =>
+        entry.kind === 'link' || (await $.fs.exists(entry.target).catch(() => false)) ? entry : null,
+      ),
     )
-    const list = checked.filter((doc): doc is Doc => doc !== null)
+    const list = checked.filter((entry): entry is Entry => entry !== null)
 
     if (!list.length) {
       return (
@@ -333,7 +378,7 @@ export const register: Register = (on, options) => {
     // A name two listed files share gets its folder, so the rows say which is which.
     const counts = new Map<string, number>()
     for (const d of list) counts.set(d.label, (counts.get(d.label) ?? 0) + 1)
-    const rowLabel = (d: Doc) => ((counts.get(d.label) ?? 0) > 1 ? `${d.label} · ${folderOf(d.path)}` : d.label)
+    const rowLabel = (d: Entry) => ((counts.get(d.label) ?? 0) > 1 ? `${d.label} · ${folderOf(d.target)}` : d.label)
 
     // j past the last row turns to the next page's first; k before the first, to the previous
     // page's last. At the list's two ends they stay put.
@@ -363,13 +408,13 @@ export const register: Register = (on, options) => {
     // The newest file only, on page 1 only: it is what `openPane` asked rows for. Left out when
     // the body cannot hold it under the rows and the hint: a row is worth more than a preview.
     const roomForImage = body >= shown.length + 1 + IMAGE_ROWS + 1
-    if (page === 0 && e.surface === 'terminal' && isPng(newest.path) && roomForImage) {
+    if (page === 0 && e.surface === 'terminal' && isPng(newest.target) && roomForImage) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
       const { Image } = $.ui.resolve(e)
-      const stat = await $.fs.stat(newest.path).catch(() => null)
+      const stat = await $.fs.stat(newest.target).catch(() => null)
       if (stat && stat.size <= INLINE_MAX_BYTES) {
-        const file = await $.fs.read(newest.path, { as: 'bytes' }).catch(() => null)
+        const file = await $.fs.read(newest.target, { as: 'bytes' }).catch(() => null)
         if (file) {
           // A fixed, small box: it is what `openPane` asks rows for, and a terminal cell is about
           // twice as tall as wide, so 3 columns a row keeps a screenshot roughly in proportion.
@@ -398,7 +443,7 @@ export const register: Register = (on, options) => {
             plain
             hotkey={String(i + 1)}
             autoFocus={i === 0 ? true : undefined}
-            onPress={open(doc.path)}
+            onPress={open(doc.target)}
           >
             {`Open ${rowLabel(doc)}`}
           </Button>

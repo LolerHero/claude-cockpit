@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -163,7 +163,13 @@ const disk = (
   })
   on('fs.stat', async ($: unknown, e: { path: string }) => ({
     // The engine hands hooks the native, resolved path (`E:\work\README.md`): match by name.
-    value: { kind: 'file', size: 10, mtimeMs: mtime[e.path.split(/[\\/]/).pop() ?? ''] ?? NOW, isLink: false },
+    // A path with no extension is a directory: `mkdir out` and `git worktree add ../wt` make those.
+    value: {
+      kind: /\.\w+$/.test(e.path) ? 'file' : 'dir',
+      size: 10,
+      mtimeMs: mtime[e.path.split(/[\\/]/).pop() ?? ''] ?? NOW,
+      isLink: false,
+    },
   }))
   on('fs.read', async () => ({ value: { base64: PNG } }))
 }
@@ -172,6 +178,18 @@ const mountPane = ($: any) =>
   $.ui.mount({ plugin: 'cockpit', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'files' })
 
 const drawPane = async ($: any) => JSON.stringify(await (await mountPane($)).drawn())
+
+// The stored list, as the module keeps it. The test `$` has no `state.get` on 2.1.289 (measured:
+// "undefined is not an object"), so the writes are watched instead: a `state.set` hook beneath
+// the module sees every value it stores and passes the write on.
+const watchState = (on: any) => {
+  let last: any[] = []
+  on('state.set', async ($: unknown, e: { value: unknown }, next: (e: unknown) => Promise<unknown>) => {
+    last = Array.isArray(e.value) ? e.value : last
+    return next(e)
+  })
+  return () => last
+}
 
 test('a Write is collected at its exact path, spaces and all', async ($, on) => {
   const asked: string[] = []
@@ -413,8 +431,9 @@ test('j and k move the focus row by row, and past the edge turn the page', async
 
 test('a stored list longer than KEEP is trimmed when read, not on the next write', async ($, on) => {
   disk(on)
-  const forty = Array.from({ length: 40 }, (_, i) => ({ path: `/work/f${i + 1}.pdf`, label: `f${i + 1}.pdf`, at: i }))
-  on('state.get', async () => ({ value: { value: forty, version: 1 } }))
+  // Legacy rows (`path`, the shape before v0.2.0): a session that stored them is read as files.
+  const over = Array.from({ length: KEEP + 8 }, (_, i) => ({ path: `/work/f${i + 1}.pdf`, label: `f${i + 1}.pdf`, at: i }))
+  on('state.get', async () => ({ value: { value: over, version: 1 } }))
   const opened: { rows?: number }[] = []
   on('ui.open', async ($: unknown, e: { rows?: number }) => {
     opened.push(e)
@@ -509,4 +528,46 @@ test("the engine's own copy of an inline screenshot is not collected", () => {
   // and names it in the result; the real file is the one Playwright saved.
   const text = '[Image: source: C:\\Users\\me\\.claude\\projects\\E--Coding\\s1\\tool-results\\mcp-playwright-blob-1791102611312-g5ctsr.png]'
   expect(pathsIn([{ type: 'text', text }])).toEqual([])
+})
+
+// ─── the session hub: files, links and folders in one list ───────────────────────────────────
+
+test('KEEP is 48', () => {
+  expect(KEEP).toBe(48)
+})
+
+test('tailOf: a file shows its folder, a link its host and port, a folder its parent path', () => {
+  expect(tailOf('file', 'E:/Work/out/report.pdf')).toBe('out')
+  expect(tailOf('link', 'https://claude.ai/artifact/abc123')).toBe('claude.ai')
+  expect(tailOf('link', 'http://localhost:3030/admin')).toBe('localhost:3030')
+  expect(tailOf('folder', 'E:/Work/.worktrees/feat-x')).toBe('E:/Work/.worktrees')
+})
+
+test('a stored legacy {path,label,at} is read as a file entry', async ($, on) => {
+  disk(on)
+  on('state.get', async () => ({ value: { value: [{ path: '/work/old.pdf', label: 'old.pdf', at: 1 }], version: 1 } }))
+  const drawn = await drawPane($)
+  expect(drawn).toContain('old.pdf')
+})
+
+test('a target produced again moves to the newest slot, mixed kinds', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('tool.call', async ($, e) => ({
+    result: { content: [{ type: 'text', text: e.tool === 'Artifact' ? 'Published: https://claude.ai/artifact/a1' : '' }] },
+  }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/b.md', content: 'x' })
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' }) // same URL again
+  expect(list().map(e => `${e.kind}:${e.label}`)).toEqual(['file:a.md', 'file:b.md', 'link:claude.ai/artifact/a1'])
+})
+
+test('the status file counts files only, never links or folders', async ($, on) => {
+  const writes: string[] = []
+  disk(on, {}, [], writes)
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'Published: https://claude.ai/artifact/a1' }] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
+  expect(JSON.parse(writes[writes.length - 1] ?? '{}').files).toBe(1)
 })
