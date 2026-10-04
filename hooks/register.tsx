@@ -14,6 +14,7 @@
 // prop carries only the coaching text, the mode words are a pill no hook sees, and a rewritten
 // hint is drawn as its own element even when empty, between two separators.
 
+import { paletteOf } from '../palettes.js'
 import { atom, read, update } from 'claude-code'
 import type { Register, EngineInterface } from 'claude-code'
 
@@ -396,6 +397,9 @@ const wordsOf = (v: unknown) => String(v ?? '').split(',').map(w => w.trim()).fi
 
 export const register: Register = (on, options) => {
   const openWords = wordsOf(options.openWords)
+  // ponytail: Button labels take the terminal's foreground (no colour prop), so a light terminal on a
+  // dark base reads poorly; every palette here is dark-ground, which is who picks one.
+  const BASE = paletteOf(options.palette).base
 
   // The reply as it streams: every flush is whole lines but the last, which ends the message, so
   // each line is complete when read and a URL is never taken half. Passed on: a settings hook
@@ -498,6 +502,11 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    // The pane paints its own ground (Julian 2026-10-04): under a `*-ansi` Claude Code theme the
+    // dialog takes an ANSI grey from the terminal's scheme, and neither the rows nor the engine's
+    // blue hotkeys read on it. The palette's base, filling the body; text keeps the terminal's
+    // foreground. Docked the body is the screen; inline it is what the layout spares.
+    const ground = { flexDirection: 'column' as const, backgroundColor: BASE, minHeight: e.props?.scroll?.bodyRows }
     const all = await stored($)
 
     // Only what is still on disk: a file can be deleted or moved after it was collected, and a
@@ -514,7 +523,7 @@ export const register: Register = (on, options) => {
     const newest = list[list.length - 1]
     if (!newest) {
       return (
-        <Box flexDirection="column">
+        <Box {...ground}>
           <Text>Nothing to open yet this session.</Text>
         </Box>
       )
@@ -630,7 +639,7 @@ export const register: Register = (on, options) => {
     if (!pool.length) {
       // A filter that matches nothing: the field stays, so the person can retype or Esc back.
       return (
-        <Box flexDirection="column">
+        <Box {...ground}>
           {header}
           <Text>{`No match for ‹${query}›.`}</Text>
         </Box>
@@ -638,7 +647,7 @@ export const register: Register = (on, options) => {
     }
 
     return (
-      <Box flexDirection="column">
+      <Box {...ground}>
         {header}
         {shown.map((entry, i) => (
           // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
@@ -657,9 +666,7 @@ export const register: Register = (on, options) => {
             >
               {`${MARK[entry.kind]} ${entry.label}`}
             </Button>
-            {/* No palette colour on the pane: the ground is the engine's dialog (grey-blue in some
-                terminal themes), where hues picked for a dark ground read at ~2:1 (Julian
-                2026-10-04). The terminal's own foreground stays readable; italic sets the tail apart. */}
+            {/* The terminal's own foreground on the palette's base (`ground`); italic sets the tail apart. */}
             <Text italic wrap="truncate-end">
               {entry.tail}
             </Text>

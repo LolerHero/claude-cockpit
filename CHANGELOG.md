@@ -14,8 +14,10 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   it streams when a link stands alone on its line or its line has an open word. Folders come
   from `mkdir` and `git worktree add`, and from an absolute path alone on a reply line; the same
   line naming an openable file that exists adds a file row.
-- The pane keeps the terminal's own foreground: palette hues on the engine's grey dialog ground
-  read at ~2:1. The hint drops its doubled key labels (`o: folder`, not `o: o: folder`), and the
+- The pane paints its own ground, the palette's new `base` role (rose-pine #191724, catppuccin
+  #1e1e2e, tokyo-night #1a1b26, ansi black): under a `*-ansi` Claude Code theme the dialog took an
+  ANSI grey from the terminal scheme, where neither the rows nor the hotkeys read. Text keeps the
+  terminal's foreground. The hint drops its doubled key labels (`o: folder`, not `o: o: folder`), and the
   page count no longer breaks over three lines in a narrow hint row. The hint is two rows (walk:
   j k h, `9–15 of 15 · 2/2`, l; actions: o f, Enter, Esc), and a short last page is padded with
   blank rows so the hint never moves when a page turns.

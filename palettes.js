@@ -7,7 +7,7 @@
 //   catppuccin-mocha https://github.com/catppuccin/palette (palette.json, flavor mocha)
 //   tokyo-night      https://github.com/folke/tokyonight.nvim (extras/lua/tokyonight_night.lua)
 
-export const ROLES = ['muted', 'subtle', 'gold', 'love', 'foam', 'iris', 'track']
+export const ROLES = ['muted', 'subtle', 'gold', 'love', 'foam', 'iris', 'track', 'base']
 
 export const PALETTES = {
   'rose-pine': {
@@ -18,6 +18,7 @@ export const PALETTES = {
     foam: '#9ccfd8', // room to spare, lines added
     iris: '#c4a7e7', // accent
     track: '#403d52', // unlit bar cells (highlight-med)
+    base: '#191724', // the Files pane's ground (base)
   },
   'catppuccin-mocha': {
     muted: '#6c7086', // overlay0
@@ -27,6 +28,7 @@ export const PALETTES = {
     foam: '#94e2d5', // teal
     iris: '#cba6f7', // mauve
     track: '#45475a', // surface1
+    base: '#1e1e2e', // base
   },
   'tokyo-night': {
     muted: '#565f89', // comment
@@ -36,6 +38,7 @@ export const PALETTES = {
     foam: '#1abc9c', // teal
     iris: '#bb9af7', // magenta
     track: '#3b4261', // fg_gutter
+    base: '#1a1b26', // bg
   },
   // The terminal's own 16 colors: whatever theme the user runs, these follow it.
   ansi: {
@@ -46,6 +49,7 @@ export const PALETTES = {
     foam: 'cyan',
     iris: 'magenta',
     track: 'gray',
+    base: 'black',
   },
 }
 
