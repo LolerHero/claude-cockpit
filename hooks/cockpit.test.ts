@@ -261,6 +261,38 @@ test('l turns to page 2 and h back, the hint always in the tree', async ($, on) 
   expect(tree).toContain('2/3')
 })
 
+// Opening a file hands the person to another app; coming back to an open pane they then have to
+// dismiss is the wrong way round (Julian, 2026-10-04). A failed open keeps the pane to pick again.
+const pressOpen = async ($: any, on: any, exitCode: number) => {
+  const closed: string[] = []
+  const toasts: string[] = []
+  on('process.run', async () => ({ value: { exitCode, stdout: '', stderr: '' } }))
+  on('ui.close', async ($: unknown, e: { id: string }) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+  on('ui.toast', async ($: unknown, e: unknown) => {
+    toasts.push(JSON.stringify(e))
+    return { value: undefined }
+  })
+  await writeMany($, on, 2)
+  const pane = await mountPane($)
+  await pane.press({ key: 'row:0' })
+  return { closed, toasts }
+}
+
+test('the pane closes itself once a file has opened', async ($, on) => {
+  const { closed, toasts } = await pressOpen($, on, 0)
+  expect(closed).toEqual(['files'])
+  expect(toasts).toEqual([])
+})
+
+test('a failed open keeps the pane and says why', async ($, on) => {
+  const { closed, toasts } = await pressOpen($, on, 1)
+  expect(closed).toEqual([])
+  expect(toasts.join()).toContain('could not open f2.pdf')
+})
+
 test('digits 1-8 are the hotkeys on every page, never letters', async ($, on) => {
   await writeMany($, on, 20)
   const pane = await mountPane($)

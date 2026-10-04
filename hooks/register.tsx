@@ -299,14 +299,17 @@ export const register: Register = (on, options) => {
           : undefined
     const turn = (to: number) => () => (to >= 0 && to < pages ? go($, to, 0) : undefined)
 
-    const open = (path: string) => () => {
-      void openerFor($, path)
+    // A file that opened takes the person to another app; the pane closes behind it, so they do
+    // not come back to a dialog they have to dismiss. A failed open keeps it to pick again.
+    const open = (path: string) => () =>
+      openerFor($, path)
         .then(cmd => $.process.run(cmd))
-        .then(r => {
-          if (r.exitCode !== 0) $.ui.toast(`could not open ${label(path)} (exit ${r.exitCode})`)
-        })
+        .then(r =>
+          r.exitCode === 0
+            ? $.ui.close({ id: PANE })
+            : $.ui.toast(`could not open ${label(path)} (exit ${r.exitCode})`),
+        )
         .catch(() => $.ui.toast(`could not open ${label(path)}`))
-    }
 
     let inline = null
     // The newest file only, on page 1 only: it is what `openPane` asked rows for.
