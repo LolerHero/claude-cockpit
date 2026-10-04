@@ -607,6 +607,11 @@ test('linksIn tool: the Artifact publish result and gh pr create output', () => 
   expect(linksIn(gh, 'tool')).toEqual(['https://github.com/LolerHero/claude-cockpit/pull/12'])
 })
 
+test('linksIn reply: a backtick ends a URL, and a scheme with no host is not a link', () => {
+  const reply = 'handle `file://` exactly like `https://` on a line with an open word\nopen `https://example.com/x`'
+  expect(linksIn(reply, 'reply', ['open'])).toEqual(['https://example.com/x'])
+})
+
 test('linksIn servers: the next dev banner yields its two addresses, registry URLs are left out', () => {
   const banner = '   ▲ Next.js 15.3.0\n   - Local:        http://localhost:3030\n   - Network:      http://192.168.178.42:3030\n\nnpm notice see https://registry.npmjs.org/-/notice\n ✓ Ready in 1.2s'
   expect(linksIn(banner, 'servers')).toEqual(['http://localhost:3030', 'http://192.168.178.42:3030'])

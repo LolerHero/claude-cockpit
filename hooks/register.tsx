@@ -173,7 +173,9 @@ const textOf = (ran: { text?: unknown; result?: unknown }): string => {
   return JSON.stringify(ran.result ?? ran ?? '')
 }
 
-const URL_RE = /https?:\/\/[^\s<>()"'\]]+/g
+// The host starts with a letter, digit or `[`: a bare `https://` in prose is a word, not a link.
+// A backtick ends it, so `` `https://x` `` in a reply is `https://x`.
+const URL_RE = /https?:\/\/[\w[][^\s<>()"'\]`]*/g
 // A dev server: localhost, loopback, the unspecified address or a private IPv4, each with a port.
 const SERVER_RE =
   /(?<![\w.:/])(?:https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}):(\d{2,5})(\/[^\s<>()"']*)?/g
