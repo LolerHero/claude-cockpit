@@ -123,6 +123,11 @@ const resolve = async ($: EngineInterface, path: string, roots: string[]) => {
 }
 
 const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
+// One file, one spelling: Windows answers `e:\` from one call and `E:\` from another, and the
+// list took them for two files.
+const sameDrive = (path: string) => path.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`)
+// The folder a file sits in, for telling two files of one name apart.
+const folderOf = (path: string) => path.split('/').slice(-2, -1)[0] ?? ''
 // PNG only: the terminal's Image takes PNG data, and anything else refuses the WHOLE pane.
 const isPng = (path: string) => /\.png$/i.test(path)
 
@@ -148,8 +153,9 @@ const go = async ($: EngineInterface, to: number, row: number) => {
 const collect = async ($: EngineInterface, paths: string[], since?: number, roots: string[] = []) => {
   const onDisk: string[] = []
   for (const found of paths) {
-    const path = await resolve($, found, roots)
-    if (!path) continue
+    const resolved = await resolve($, found, roots)
+    if (!resolved) continue
+    const path = sameDrive(resolved)
     if (since !== undefined) {
       const stat = await $.fs.stat(path).catch(() => null)
       if (!stat || stat.mtimeMs < since - 2000) continue
@@ -161,7 +167,7 @@ const collect = async ($: EngineInterface, paths: string[], since?: number, root
     await update($, files, list => {
       // A path produced again moves to the newest slot: a regenerated file is this session's latest
       // output, and left in its old place a full list drops it on the next new file.
-      const kept = list.filter(d => !onDisk.includes(d.path))
+      const kept = list.filter(d => !onDisk.includes(sameDrive(d.path)))
       return [...kept, ...onDisk.map(path => ({ path, label: label(path), at }))].slice(-KEEP)
     })
   }
@@ -292,6 +298,10 @@ export const register: Register = (on, options) => {
       .reverse()
       .slice(page * perPage, (page + 1) * perPage)
     const last = shown.length - 1
+    // A name two listed files share gets its folder, so the rows say which is which.
+    const counts = new Map<string, number>()
+    for (const d of list) counts.set(d.label, (counts.get(d.label) ?? 0) + 1)
+    const rowLabel = (d: Doc) => ((counts.get(d.label) ?? 0) > 1 ? `${d.label} · ${folderOf(d.path)}` : d.label)
 
     // j past the last row turns to the next page's first; k before the first, to the previous
     // page's last. At the list's two ends they stay put.
@@ -358,7 +368,7 @@ export const register: Register = (on, options) => {
             autoFocus={i === 0 ? true : undefined}
             onPress={open(doc.path)}
           >
-            {`Open ${doc.label}`}
+            {`Open ${rowLabel(doc)}`}
           </Button>
         ))}
         {/* The hint, always drawn, one row: its keys are live Buttons (`j: ↓`), so it cannot

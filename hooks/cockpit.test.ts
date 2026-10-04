@@ -261,6 +261,29 @@ test('l turns to page 2 and h back, the hint always in the tree', async ($, on) 
   expect(tree).toContain('2/3')
 })
 
+// Two rows read „button.md“ and nothing said whether they were one file or two (Julian,
+// 2026-10-04). One file reached by two spellings of its drive is one row; two files with one
+// name each say their folder.
+test('a drive letter in either case is one file, not two', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: 'e:/work/design/button.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: 'E:/work/design/button.md', content: 'y' })
+  expect((await drawPane($)).match(/Open button\.md/g)?.length).toBe(1)
+})
+
+test('two files with the same name each show their folder', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/a/contracts/button.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/b/design/button.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/b/notes.md', content: 'x' })
+  const tree = await drawPane($)
+  expect(tree).toContain('Open button.md · contracts')
+  expect(tree).toContain('Open button.md · design')
+  expect(tree).toContain('Open notes.md"') // a unique name stays bare
+})
+
 // Below 110 columns the terminal seats the pane inline above the prompt, and it gets only the rows
 // the layout spares (a wrapped prompt takes one more). A page taller than that made the engine
 // scroll the body: the hint fell off the bottom and the arrows scrolled instead of walking

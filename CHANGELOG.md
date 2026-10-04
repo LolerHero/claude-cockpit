@@ -11,6 +11,7 @@ so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
   outgrows the terminal. A stored list longer than 32 is trimmed when read.
 - The pane closes itself once a file has opened; a failed open keeps it and says why.
 - Below 110 columns (the pane sits above the prompt) a page is as long as the rows the terminal grants, so the hint and the keys keep working; the image preview gives way first.
+- One file reached as `e:` and `E:` is one row; two files with the same name show their folder (`button.md · contracts`).
 
 ## v0.1.0 — 2026-10-04
 
