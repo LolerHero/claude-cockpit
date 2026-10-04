@@ -25,8 +25,10 @@ export const KEEP = 48
 // terminal pushed every redraw (spinner ticks) into scrollback, stacking copies over the chat.
 export const PER_PAGE = 8
 const INLINE_MAX_BYTES = 400_000 // a tree carries bounded text; a big PNG gets the button alone
+// The hint is two rows: the walk (j k h n/N l) and the actions (o f, what Enter and Esc do).
+export const HINT_ROWS = 2
 export const IMAGE_ROWS = 10 // the inline preview's height in cells; `openPane` asks room for it
-// 8 rows + hint + 10-row image and its gap = 20 rows: inside a normal window.
+// 8 rows + 2 hint rows + 10-row image and its gap = 21 rows: inside a normal window.
 
 // The key reaches the pane through `/files`, not a Button `action`: ~/.claude/keybindings.json
 // binds `ctrl+x f` to `command:files` in the Chat context (setup.mjs writes that binding).
@@ -368,7 +370,7 @@ const openPane = async ($: EngineInterface, openWords: string[]) => {
   focused = 0
   filtering = false
   query = ''
-  const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + 1 + (newest && isPng(newest.target) ? IMAGE_ROWS + 1 : 0)
+  const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + HINT_ROWS + (newest && isPng(newest.target) ? IMAGE_ROWS + 1 : 0)
   await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true, rows })
 }
 
@@ -517,13 +519,13 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    // A page is as long as the body the surface granted, less the hint row. Docked (fullscreen
+    // A page is as long as the body the surface granted, less the hint rows. Docked (fullscreen
     // from 110 columns) that is floor to ceiling; inline above the prompt it is what the layout
     // spares, which a wrapped prompt shortens. A page taller than the body made the engine scroll
     // it: the hint fell off and the arrows scrolled instead of walking.
     const body = e.props?.scroll?.bodyRows ?? Infinity
     // The Input takes a row off the page while it is up.
-    const perPage = Math.max(1, Math.min(PER_PAGE, body - 1 - (filtering ? 1 : 0)))
+    const perPage = Math.max(1, Math.min(PER_PAGE, body - HINT_ROWS - (filtering ? 1 : 0)))
     // The pages are cut from `pool`: the list newest first, or the matches best first.
     const pool = filtering && query ? fuzzy(query, list) : list.slice().reverse()
     const pages = Math.max(1, Math.ceil(pool.length / perPage))
@@ -600,7 +602,7 @@ export const register: Register = (on, options) => {
     // The newest file only, on page 1 only, and not while filtering (the list needs the rows):
     // it is what `openPane` asked rows for. Left out when the body cannot hold it under the rows
     // and the hint: a row is worth more than a preview.
-    const roomForImage = body >= shown.length + 1 + IMAGE_ROWS + 1
+    const roomForImage = body >= shown.length + HINT_ROWS + IMAGE_ROWS + 1
     if (page === 0 && !filtering && e.surface === 'terminal' && isPng(newest.target) && roomForImage) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
@@ -663,17 +665,19 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
         ))}
-        {/* The hint, always drawn, one row: its keys are live Buttons (`j: ↓`), so it cannot
-            drift from what works. `openPane` counts this row. */}
+        {/* The hint, always drawn, two rows (HINT_ROWS): its keys are live Buttons (`j: ↓`), so it cannot
+            drift from what works. `openPane` counts these rows. */}
+        {/* A short last page keeps the page's height (Julian 2026-10-04): the hint stays where it was,
+            so a turn from 8 rows to 7 reads as a turn, not as an entry gone. Only with a second page. */}
+        {pages > 1
+          ? Array.from({ length: perPage - shown.length }, (_, i) => <Text key={`pad:${i}`}> </Text>)
+          : null}
         <Box flexDirection="row" columnGap={1}>
           <Button key={NAV.j} plain dimColor hotkey="j" onPress={down}>
             ↓
           </Button>
           <Button key={NAV.k} plain dimColor hotkey="k" onPress={up}>
             ↑
-          </Button>
-          <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
-            folder
           </Button>
           {pages > 1 ? (
             <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
@@ -692,13 +696,18 @@ export const register: Register = (on, options) => {
               ›
             </Button>
           ) : null}
+        </Box>
+        <Box flexDirection="row" columnGap={1}>
+          <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
+            folder
+          </Button>
           {filtering ? null : (
             <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
               find
             </Button>
           )}
           <Text wrap="truncate-end">
-            {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · f finds · Esc closes'}
+            {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
           </Text>
         </Box>
         {inline}

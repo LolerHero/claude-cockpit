@@ -16,7 +16,9 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   line naming an openable file that exists adds a file row.
 - The pane keeps the terminal's own foreground: palette hues on the engine's grey dialog ground
   read at ~2:1. The hint drops its doubled key labels (`o: folder`, not `o: o: folder`), and the
-  page count no longer breaks over three lines in a narrow hint row.
+  page count no longer breaks over three lines in a narrow hint row. The hint is two rows (walk:
+  j k h, `9–15 of 15 · 2/2`, l; actions: o f, Enter, Esc), and a short last page is padded with
+  blank rows so the hint never moves when a page turns.
 - Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and an italic tail: the file's
   folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
   files is gone; the tail tells them apart.

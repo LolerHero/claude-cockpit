@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, linksIn, foldersIn, fuzzy, fuzzyScore, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, foldersIn, fuzzy, fuzzyScore, HINT_ROWS, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -15,7 +15,7 @@ const PANE_PROPS = {
   isFocused: true,
   bodyColumns: 60,
   placement: 'dock',
-  scroll: { offset: 0, bodyRows: 20 },
+  scroll: { offset: 0, bodyRows: 21 }, // what openPane asks with a PNG: 8 rows + 2 hint rows + the image and its gap
   view: {},
 } as const
 
@@ -362,8 +362,8 @@ const mountInline = ($: any, bodyRows: number) =>
 test('inline with few rows, a page is as long as the rows granted, the hint still drawn', async ($, on) => {
   await writeMany($, on, 20)
   const tree = JSON.stringify(await (await mountInline($, 5)).drawn())
-  expect(labels(tree)).toEqual(['f20', 'f19', 'f18', 'f17'])
-  expect(tree).toContain('1/5')
+  expect(labels(tree)).toEqual(['f20', 'f19', 'f18']) // 5 rows less the two hint rows
+  expect(tree).toContain('1/7')
   expect(tree).toContain('Esc')
 })
 
@@ -410,12 +410,23 @@ test('a failed open keeps the pane and says why', async ($, on) => {
   expect(toasts.join()).toContain('could not open f2.pdf')
 })
 
+test('a short last page keeps the page height: blank rows pad it, so the hint does not move', async ($, on) => {
+  await writeMany($, on, 15)
+  const pane = await mountPane($)
+  // One child of the pane's column per drawn row: entry lines, pads, the two hint rows.
+  const height = async () => ((await pane.drawn()) as any).children.length
+  const first = await height()
+  await pane.press({ key: 'nav:l' }) // 7 entries on page 2
+  expect(JSON.stringify(await pane.drawn())).toContain('9–15 of 15 · 2/2')
+  expect(await height()).toBe(first) // 7 entries + 1 blank row: the hint has not moved up
+})
+
 test('digits 1-8 are the hotkeys on every page, never letters', async ($, on) => {
   await writeMany($, on, 20)
   const pane = await mountPane($)
   await pane.press({ key: 'nav:l' })
   const keys = (await pane.findAll({ type: 'Button' })).map((b: any) => b.props?.hotkey).filter(Boolean)
-  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'o', 'h', 'l', 'f'])
+  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'h', 'l', 'o', 'f'])
 })
 
 test('j and k move the focus row by row, and past the edge turn the page', async ($, on) => {
@@ -455,7 +466,7 @@ test('a stored list longer than KEEP is trimmed when read, not on the next write
   await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: false, columns: 120 } })
   const tree = await drawPane($)
   expect(tree).toContain(`1/${KEEP / PER_PAGE}`)
-  expect(opened[0]?.rows).toBe(PER_PAGE + 1)
+  expect(opened[0]?.rows).toBe(PER_PAGE + HINT_ROWS)
 })
 
 test('with a PNG preview the dialog asks at most 22 rows, whatever the list length', async ($, on) => {
@@ -468,7 +479,7 @@ test('with a PNG preview the dialog asks at most 22 rows, whatever the list leng
   await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
   await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: false, columns: 120 } })
   const rows = opened[0]?.rows ?? 99
-  expect(rows).toBe(PER_PAGE + 1 + IMAGE_ROWS + 1)
+  expect(rows).toBe(PER_PAGE + HINT_ROWS + IMAGE_ROWS + 1)
   expect(rows).toBeLessThanOrEqual(22)
   expect(await drawPane($)).toContain('"Image"')
 })
