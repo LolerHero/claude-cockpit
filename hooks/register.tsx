@@ -46,6 +46,9 @@ const stored = async ($: EngineInterface) => (await read($, files)).slice(-KEEP)
 // starts on page 1, which is where a reopened pane starts anyway.
 let page = 0
 let focused = 0
+// Filter mode: `f` draws an Input (key `q`) whose text narrows the list; Esc returns to the list.
+let filtering = false
+let query = ''
 
 // Module-level: a reload starts at 0 until the next draw measures again; the status line then
 // falls back to its own width sources.
@@ -257,7 +260,7 @@ const MARK: Record<EntryKind, string> = { file: '▪', link: '↗', folder: '▸
 // A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
 // it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the
 // focus ring with them. So rows take 1–8 and the navigation takes h/j/k/l, as Buttons of its own.
-const NAV = { j: 'nav:j', k: 'nav:k', h: 'nav:h', l: 'nav:l', o: 'nav:o' } as const
+const NAV = { j: 'nav:j', k: 'nav:k', h: 'nav:h', l: 'nav:l', o: 'nav:o', f: 'nav:f' } as const
 const isNav = (key: string | undefined) => !!key?.startsWith('nav:')
 
 // Turns to `to` (clamped by the caller), redraws, and puts the ring on row `row` of it.
@@ -358,6 +361,8 @@ const openPane = async ($: EngineInterface, openWords: string[]) => {
   const newest = list[list.length - 1]
   page = 0
   focused = 0
+  filtering = false
+  query = ''
   const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + 1 + (newest && isPng(newest.target) ? IMAGE_ROWS + 1 : 0)
   await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true, rows })
 }
@@ -480,8 +485,22 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Esc while the filter is up returns to the list; the pane stays. The engine's Esc reaches us
+  // as a close (closeOnEscape): answered without `next`, it is refused and the list is drawn.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    if (filtering && e.origin.kind === 'person') {
+      filtering = false
+      query = ''
+      page = 0
+      focused = 0
+      $.ui.invalidate('ui.render')
+      return
+    }
+    return next(e)
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Input } = $.ui.resolve(e)
     const all = await stored($)
 
     // Only what is still on disk: a file can be deleted or moved after it was collected, and a
@@ -508,15 +527,25 @@ export const register: Register = (on, options) => {
     // spares, which a wrapped prompt shortens. A page taller than the body made the engine scroll
     // it: the hint fell off and the arrows scrolled instead of walking.
     const body = e.props?.scroll?.bodyRows ?? Infinity
-    const perPage = Math.max(1, Math.min(PER_PAGE, body - 1))
-    // The pages are cut from `pool`, newest first.
-    const pool = list.slice().reverse()
-    const pages = Math.ceil(pool.length / perPage)
+    // The Input takes a row off the page while it is up.
+    const perPage = Math.max(1, Math.min(PER_PAGE, body - 1 - (filtering ? 1 : 0)))
+    // The pages are cut from `pool`: the list newest first, or the matches best first.
+    const pool = filtering && query ? fuzzy(query, list) : list.slice().reverse()
+    const pages = Math.max(1, Math.ceil(pool.length / perPage))
     page = Math.min(page, pages - 1) // a file deleted since can shorten the list under us
     const shown = pool.slice(page * perPage, (page + 1) * perPage)
     const last = shown.length - 1
     focused = Math.min(focused, Math.max(0, last)) // a shorter page than the one the ring was on
     const lastRow = (p: number) => Math.min(perPage, pool.length - p * perPage) - 1
+
+    const startFilter = () => {
+      filtering = true
+      query = ''
+      page = 0
+      focused = 0
+      $.ui.invalidate('ui.render')
+      void $.ui.focus({ requestId: PANE, key: 'q' }).catch(() => null)
+    }
 
     // j past the last row turns to the next page's first; k before the first, to the previous
     // page's last. The list is a ring (Julian, 2026-10-04): past either end it comes round, j
@@ -548,11 +577,31 @@ export const register: Register = (on, options) => {
       return open({ ...entry, target, label: target })()
     }
 
+    // The field, while filtering. Its text is drawn back on every change, so a redraw (a new
+    // entry arriving) does not empty it. Enter opens the best match; nothing when there is none.
+    const header = filtering ? (
+      <Input
+        key="q"
+        label="find"
+        value={query}
+        placeholder="type to filter · Enter opens the top match · Esc back"
+        autoFocus
+        onInput={value => {
+          query = value
+          page = 0
+          focused = 0
+          $.ui.invalidate('ui.render')
+        }}
+        onSubmit={() => (pool[0] ? open(pool[0])() : undefined)}
+      />
+    ) : null
+
     let inline = null
-    // The newest file only, on page 1 only: it is what `openPane` asked rows for. Left out when
-    // the body cannot hold it under the rows and the hint: a row is worth more than a preview.
+    // The newest file only, on page 1 only, and not while filtering (the list needs the rows):
+    // it is what `openPane` asked rows for. Left out when the body cannot hold it under the rows
+    // and the hint: a row is worth more than a preview.
     const roomForImage = body >= shown.length + 1 + IMAGE_ROWS + 1
-    if (page === 0 && e.surface === 'terminal' && isPng(newest.target) && roomForImage) {
+    if (page === 0 && !filtering && e.surface === 'terminal' && isPng(newest.target) && roomForImage) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
       const { Image } = $.ui.resolve(e)
@@ -576,20 +625,32 @@ export const register: Register = (on, options) => {
       }
     }
 
+    if (!pool.length) {
+      // A filter that matches nothing: the field stays, so the person can retype or Esc back.
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Text color={palette.subtle}>{`No match for ‹${query}›.`}</Text>
+        </Box>
+      )
+    }
+
     return (
       <Box flexDirection="column">
+        {header}
         {shown.map((entry, i) => (
           // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
           // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
           // Keyed by position: `row:N` is what `go` focuses after a page turn. The ring starts on
-          // the row the pane holds (`go` focuses the same one), so a redraw keeps it. The muted
-          // tail says where the thing is, which tells two files of one name apart.
+          // the row the pane holds (`go` focuses the same one), so a redraw keeps it; while the
+          // field is up, the field keeps it. The muted tail says where the thing is, which tells
+          // two files of one name apart.
           <Box key={`line:${i}`} flexDirection="row" columnGap={1}>
             <Button
               key={`row:${i}`}
               plain
               hotkey={String(i + 1)}
-              autoFocus={i === focused ? true : undefined}
+              autoFocus={!filtering && i === focused ? true : undefined}
               onPress={open(entry)}
             >
               {`${MARK[entry.kind]} ${entry.label}`}
@@ -622,8 +683,13 @@ export const register: Register = (on, options) => {
               ›
             </Button>
           ) : null}
+          {filtering ? null : (
+            <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
+              f: find
+            </Button>
+          )}
           <Text color={palette.muted} wrap="truncate-end">
-            · Enter or 1–8 opens · f finds · Esc closes
+            {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · f finds · Esc closes'}
           </Text>
         </Box>
         {inline}

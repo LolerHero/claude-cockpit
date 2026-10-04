@@ -412,7 +412,7 @@ test('digits 1-8 are the hotkeys on every page, never letters', async ($, on) =>
   const pane = await mountPane($)
   await pane.press({ key: 'nav:l' })
   const keys = (await pane.findAll({ type: 'Button' })).map((b: any) => b.props?.hotkey).filter(Boolean)
-  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'o', 'h', 'l'])
+  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'o', 'h', 'l', 'f'])
 })
 
 test('j and k move the focus row by row, and past the edge turn the page', async ($, on) => {
@@ -843,4 +843,80 @@ test('fuzzy: subsequence match, consecutive runs and word starts score higher, t
   expect(fuzzy('', entries).map(x => x.at)).toEqual([3, 2, 1])
   expect(fuzzy('inv', entries).map(x => x.label)).toEqual(['Rechnung-März.pdf']) // the tail counts
   expect(fuzzyScore('3030', 'localhost:3030 localhost:3030')).toBeGreaterThan(fuzzyScore('3030', 'home-3-0-3-0.png')!)
+})
+
+// ─── filter mode: f, the Input, Enter, Esc ───────────────────────────────────────────────────
+// Measured in a terminal (Julian, 2026-10-04): while the Input has focus the Button hotkeys do not
+// fire, so `f` can draw a field in the pane. The harness drives the Input by key, not by keystroke.
+
+test('f draws the search Input; typing filters the rows; Enter opens the top match and closes the pane', async ($, on) => {
+  const ran: string[][] = []
+  const closed: string[] = []
+  disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
+  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+    ran.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+  })
+  on('ui.close', async ($: unknown, e: { id: string }) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+  on('tool.call', async () => ({ result: { content: [] } }))
+  for (const name of ['home-1440.png', 'report-2026.pdf', 'notes.md']) {
+    await $.tool.call({ tool: 'Write', file_path: `/work/${name}`, content: 'x' })
+  }
+  const pane = await mountPane($)
+  expect(await pane.find({ type: 'Input' })).toBeUndefined()
+  await pane.press({ key: 'nav:f' })
+  expect((await pane.find({ type: 'Input' }))?.props?.key).toBe('q')
+  await pane.input({ key: 'q', text: 'rep', kind: 'change' })
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('report-2026.pdf')
+  expect(drawn).not.toContain('notes.md')
+  await pane.input({ key: 'q', text: 'rep' }) // Enter
+  expect(ran[0]?.[4]).toBe('\\work\\report-2026.pdf')
+  expect(closed).toEqual(['files'])
+})
+
+test('no match says so; Enter on no match opens nothing', async ($, on) => {
+  const ran: string[][] = []
+  disk(on)
+  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+    ran.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+  })
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
+  const pane = await mountPane($)
+  await pane.press({ key: 'nav:f' })
+  await pane.input({ key: 'q', text: 'zzz', kind: 'change' })
+  expect(JSON.stringify(await pane.drawn())).toContain('No match for ‹zzz›.')
+  await pane.input({ key: 'q', text: 'zzz' })
+  expect(ran).toEqual([])
+})
+
+test('while filtering, the hint says Esc goes back to the list and the f key is gone', async ($, on) => {
+  // The engine raises `ui.close` for the person's Esc (closeOnEscape); the module's hook answers
+  // for it while filtering, without `next`, and the pane stays. The test `$.ui` on 2.1.289 has
+  // no `close` (measured: render, scroll, focus, press, input, select, mount), so that path is
+  // the manual check's; what is drawn around it is pinned here.
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
+  const pane = await mountPane($)
+  await pane.press({ key: 'nav:f' })
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('Esc back')
+  expect(drawn).not.toContain('"hotkey":"f"')
+  expect(drawn).toContain('▪ a.md') // an empty query is the whole list
+})
+
+test('the PNG preview hides while a filter is active', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
+  const pane = await mountPane($)
+  expect(await pane.find({ type: 'Image' })).toBeDefined()
+  await pane.press({ key: 'nav:f' })
+  expect(await pane.find({ type: 'Image' })).toBeUndefined()
 })
