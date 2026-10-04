@@ -202,16 +202,16 @@ test('a file a command only mentions is not collected; one it produced is', asyn
 test('a file written again moves to the top, even once the list is full', async ($, on) => {
   disk(on)
   on('tool.call', async () => ({ result: { content: [] } }))
-  for (let i = 1; i <= 20; i++) await $.tool.call({ tool: 'Write', file_path: `/work/f${i}.pdf`, content: 'x' })
+  for (let i = 1; i <= 10; i++) await $.tool.call({ tool: 'Write', file_path: `/work/f${i}.pdf`, content: 'x' })
   // f1 is the oldest of a full list; before the fix a rewrite kept it there, and the next new
   // file pushed it out, so a regenerated file looked like it was never produced.
   await $.tool.call({ tool: 'Write', file_path: '/work/f1.pdf', content: 'y' })
-  await $.tool.call({ tool: 'Write', file_path: '/work/f21.pdf', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/f11.pdf', content: 'x' })
   const tree = await drawPane($)
   expect(tree).toContain('Open f1.pdf')
   expect(tree).not.toContain('Open f2.pdf') // the oldest untouched one is the one dropped
-  expect(tree.indexOf('Open f21.pdf')).toBeLessThan(tree.indexOf('Open f1.pdf'))
-  expect(tree.indexOf('Open f1.pdf')).toBeLessThan(tree.indexOf('Open f20.pdf'))
+  expect(tree.indexOf('Open f11.pdf')).toBeLessThan(tree.indexOf('Open f1.pdf'))
+  expect(tree.indexOf('Open f1.pdf')).toBeLessThan(tree.indexOf('Open f10.pdf'))
 })
 
 test('a newest image that is not a PNG gets its button but no inline drawing', async ($, on) => {

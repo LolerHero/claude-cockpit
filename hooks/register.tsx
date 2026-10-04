@@ -21,7 +21,7 @@ import type { Doc } from '../types'
 import { paletteOf } from '../palettes.js'
 
 const PANE = 'files'
-const KEEP = 20
+const KEEP = 10 // with the 10-row image preview the dialog stays ~22 rows, inside a normal window
 const INLINE_MAX_BYTES = 400_000 // a tree carries bounded text; a big PNG gets the button alone
 export const IMAGE_ROWS = 10 // the inline preview's height in cells; `openPane` asks room for it
 
