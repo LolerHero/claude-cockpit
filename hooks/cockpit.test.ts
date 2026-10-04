@@ -616,3 +616,66 @@ test('foldersIn reply: an absolute path alone on its line, with or without backt
   const reply = 'The worktree is here:\n`E:/Coding/.worktrees/hub/`\nand the report sits in E:/Coding/out which you can open.\nout/reports\n'
   expect(foldersIn(reply, 'reply')).toEqual(['E:/Coding/.worktrees/hub'])
 })
+
+// ─── the hooks: links and folders from Bash, deploy tools, the rebuild ──────────────────────
+
+test('a dev server and a file from one Bash call are two entries of two kinds', async ($, on) => {
+  disk(on, { 'report.pdf': 1_000_000 })
+  const list = watchState(on)
+  on('tool.call', async () => ({
+    result: { stdout: 'wrote /work/report.pdf\n- Local: http://localhost:3030\n', stderr: '', interrupted: false },
+  }))
+  await $.tool.call({ tool: 'Bash', command: 'npm run build && npm run dev' })
+  expect(list().map(e => `${e.kind}:${e.label}:${e.tail}`)).toEqual(['file:report.pdf:work', 'link:localhost:3030:localhost:3030'])
+})
+
+test('gh pr create output yields its URL; a plain Bash with a docs URL yields nothing', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('tool.call', async ($, e) => ({
+    result: { stdout: String(e.command).startsWith('gh') ? 'https://github.com/o/r/pull/7\n' : 'see https://docs.npmjs.com/x\n', stderr: '' },
+  }))
+  await $.tool.call({ tool: 'Bash', command: 'npm install' })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(list().map(e => e.target)).toEqual(['https://github.com/o/r/pull/7'])
+})
+
+test('mkdir collects the folder once it exists; a failed mkdir collects nothing', async ($, on) => {
+  disk(on, {}, [], [], p => p !== '/work/never')
+  const list = watchState(on)
+  on('tool.call', async ($, e) =>
+    String(e.command).includes('never') ? { result: { stdout: '', stderr: 'denied' }, isError: true } : { result: { stdout: '' } },
+  )
+  await $.tool.call({ tool: 'Bash', command: 'mkdir -p /work/out/reports' })
+  await $.tool.call({ tool: 'Bash', command: 'mkdir /work/never' })
+  expect(list().map(e => `${e.kind}:${e.target}`)).toEqual(['folder:/work/out/reports'])
+})
+
+test('a deploy tool whose result names a URL yields a link', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'deployed: https://kims-catering-norderstedt.de' }] } }))
+  await $.tool.call({ tool: 'mcp__kaizen-vps__deploy_catering' })
+  expect(list().map(e => e.target)).toEqual(['https://kims-catering-norderstedt.de'])
+})
+
+test('an empty list is rebuilt with artifact links and reply links too', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('session.messages', async () => ({
+    value: [
+      {
+        role: 'assistant',
+        text: 'Here it is:\nhttps://claude.ai/artifact/r1',
+        toolUses: [
+          { tool_use_id: 't1', tool: 'Artifact', input: {}, result: { content: [{ type: 'text', text: 'Published https://claude.ai/artifact/p1' }] }, text: 'Published https://claude.ai/artifact/p1' },
+          { tool_use_id: 't2', tool: 'Write', input: { file_path: '/work/a.md' }, result: {}, text: 'ok' },
+        ],
+      },
+    ],
+  }))
+  on('session.start', async () => ({ cwd: CWD }))
+  on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(list().map(e => e.target).sort()).toEqual(['/work/a.md', 'https://claude.ai/artifact/p1', 'https://claude.ai/artifact/r1'])
+})

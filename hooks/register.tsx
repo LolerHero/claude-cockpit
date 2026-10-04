@@ -148,10 +148,24 @@ const labelOf = (kind: EntryKind, target: string) =>
 const isPng = (path: string) => /\.png$/i.test(path)
 
 type Found = { kind: EntryKind; target: string }
+const link = (target: string): Found => ({ kind: 'link', target })
+// A `gh … create` prints the URL of the thing it made; any other Bash output's URLs are noise.
+const GH_CREATE = /\bgh\s+(?:pr|issue|release)\s+create\b/
 
-// What a tool answered, as text: `text` when the engine flattened it, else the result as JSON.
-const textOf = (ran: { text?: unknown; result?: unknown }) =>
-  typeof ran.text === 'string' ? ran.text : JSON.stringify(ran.result ?? ran ?? '')
+// What a tool answered, as text: `text` when the engine flattened it; a Bash result's stdout and
+// stderr; an MCP result's text blocks; else the result as JSON. Not JSON for the first three: a
+// stringified `\n` is a backslash and an `n`, which a URL pattern reads as part of the URL.
+const textOf = (ran: { text?: unknown; result?: unknown }): string => {
+  if (typeof ran.text === 'string') return ran.text
+  const r = ran.result as { stdout?: unknown; stderr?: unknown; content?: unknown } | undefined
+  if (r && (typeof r.stdout === 'string' || typeof r.stderr === 'string')) {
+    return `${typeof r.stdout === 'string' ? r.stdout : ''}\n${typeof r.stderr === 'string' ? r.stderr : ''}`
+  }
+  if (r && Array.isArray(r.content)) {
+    return r.content.map(b => (b && typeof b.text === 'string' ? b.text : '')).join('\n')
+  }
+  return JSON.stringify(ran.result ?? ran ?? '')
+}
 
 const URL_RE = /https?:\/\/[^\s<>()"'\]]+/g
 // A dev server: localhost, loopback, the unspecified address or a private IPv4, each with a port.
@@ -270,19 +284,26 @@ const SCREENSHOT_TOOLS = [
 
 // The list is host state for the session id; a trip through the agent screen hands the same
 // conversation a new id and an empty state. The transcript survives it, so an empty list is
-// rebuilt from it, oldest first so the newest call ends up on top. Never rejects.
-const rebuild = async ($: EngineInterface) => {
+// rebuilt from it, oldest first so the newest call ends up on top: Writes, screenshots, artifact
+// publishes, and the links and folders the replies named. Never rejects.
+const rebuild = async ($: EngineInterface, openWords: string[]) => {
   try {
     const messages = await $.session.messages()
     const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')].filter(Boolean)
     const found: Found[] = []
     const file = (target: string): Found => ({ kind: 'file', target })
     for (const m of messages) {
+      if (m.role === 'assistant' && m.text) {
+        found.push(...linksIn(m.text, 'reply', openWords).map(link))
+        found.push(...foldersIn(m.text, 'reply').map(target => ({ kind: 'folder' as const, target })))
+      }
       for (const use of m.toolUses ?? []) {
         if (use.isError) continue
         if (use.tool === 'Write' && typeof use.input?.file_path === 'string') {
           const path = use.input.file_path.replace(/\\/g, '/')
           if (IS_OPENABLE.test(path)) found.push(file(path))
+        } else if (use.tool === 'Artifact') {
+          found.push(...linksIn(use.text ?? JSON.stringify(use.result ?? ''), 'tool').map(link))
         } else if (SCREENSHOT_TOOLS.includes(use.tool)) {
           found.push(...pathsIn(use.result ?? use.text ?? '').map(file))
         }
@@ -300,10 +321,10 @@ const rebuild = async ($: EngineInterface) => {
 // to scroll, and while it has, the engine spends the arrows on scrolling (measured 2026-10-03:
 // opened a third tall, a 20-row image box made the list scroll and the arrows dead).
 // One page at most, never the whole list: see PER_PAGE.
-const openPane = async ($: EngineInterface) => {
+const openPane = async ($: EngineInterface, openWords: string[]) => {
   // An empty list may be a new session id over an old conversation: rebuild it before opening.
   // Here, not in the draw: the host refuses a state write while a render is dispatched.
-  if (!(await stored($)).length) await rebuild($)
+  if (!(await stored($)).length) await rebuild($, openWords)
   const list = await stored($)
   const newest = list[list.length - 1]
   page = 0
@@ -326,11 +347,12 @@ const openerFor = async ($: EngineInterface, path: string): Promise<string[]> =>
 
 export const register: Register = (on, options) => {
   const palette = paletteOf(options.palette)
+  const openWords: string[] = [] // Task 5 reads it from `options.openWords`
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await $.command.register({ name: 'files', description: 'Open a file this session produced' })
-    await rebuild($) // a resumed or re-identified conversation: the count is right before /files
+    await $.command.register({ name: 'files', description: 'Open a file, link or folder this session produced' })
+    await rebuild($, openWords) // a resumed or re-identified conversation: the count is right before /files
     await publish($)
     // A file deleted outside Claude (Explorer, another shell) fires no hook: recount on a clock.
     $.clock.every(30_000, () => void publish($))
@@ -338,7 +360,7 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'files' }, async $ => {
-    await openPane($)
+    await openPane($, openWords)
     return {} // silent: the pane itself is the answer
   })
 
@@ -353,6 +375,8 @@ export const register: Register = (on, options) => {
 
   // Everything else: read the answer, keep what is openable AND on disk. Bash is here because
   // the scripts that produce the real artefacts — invoices, reports — are run, not written.
+  // A Bash call also yields dev-server addresses from its output (every URL when it is a
+  // `gh … create`, whose output is the thing made) and the folders its command made.
   for (const tool of ['Bash', ...SCREENSHOT_TOOLS]) {
     on('tool.call', { tool }, async ($, e, next) => {
       const since = await $.clock.now()
@@ -360,6 +384,12 @@ export const register: Register = (on, options) => {
       if (ran.deny !== undefined || ran.isError === true) return ran
       const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')]
       const found: Found[] = pathsIn(ran).map(target => ({ kind: 'file', target }))
+      if (e.tool === 'Bash') {
+        const command = (e as { command?: unknown }).command
+        const cmd = typeof command === 'string' ? command : ''
+        found.push(...linksIn(textOf(ran), GH_CREATE.test(cmd) ? 'tool' : 'servers').map(link))
+        found.push(...foldersIn(cmd, 'command').map(target => ({ kind: 'folder' as const, target })))
+      }
       await collect($, found, since, roots.filter(Boolean))
       return ran
     })
@@ -369,7 +399,15 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Artifact' }, async ($, e, next) => {
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError === true) return ran
-    await collect($, linksIn(textOf(ran), 'tool').map(target => ({ kind: 'link' as const, target })))
+    await collect($, linksIn(textOf(ran), 'tool').map(link))
+    return ran
+  })
+
+  // A deploy tool of any MCP server: its answer names what went live.
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    if (!/^mcp__.*deploy/i.test(e.tool) || ran.deny !== undefined || ran.isError === true) return ran
+    await collect($, linksIn(textOf(ran), 'tool').map(link))
     return ran
   })
 
