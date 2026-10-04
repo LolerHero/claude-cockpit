@@ -153,9 +153,32 @@ type Found = { kind: EntryKind; target: string }
 const textOf = (ran: { text?: unknown; result?: unknown }) =>
   typeof ran.text === 'string' ? ran.text : JSON.stringify(ran.result ?? ran ?? '')
 
-// Task 2 replaces this with the real one (modes, dev servers, open words).
-export const linksIn = (text: string, _mode: 'tool' | 'servers' | 'reply', _openWords: string[] = []): string[] =>
-  [...new Set((text.match(/https?:\/\/[^\s<>()"'\]]+/g) ?? []).map(u => u.replace(/[.,;:!?)\]]+$/, '')))]
+const URL_RE = /https?:\/\/[^\s<>()"'\]]+/g
+// A dev server: localhost, loopback, the unspecified address or a private IPv4, each with a port.
+const SERVER_RE =
+  /(?<![\w.:/])(?:https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}):(\d{2,5})(\/[^\s<>()"']*)?/g
+const trimUrl = (u: string) => u.replace(/[.,;:!?)\]]+$/, '')
+// A line a person is meant to follow: a bare URL, `- url`, `[text](url)`, or one with an open word.
+const ALONE_RE = /^(?:[-*]\s+)?(?:\[[^\]]*\]\()?https?:\/\/\S+\)?$/
+
+// `tool`: every URL (an artifact publish, `gh … create`, a deploy tool). `servers`: dev-server
+// addresses only, so a build log's registry and docs links stay out; `0.0.0.0` is not a place a
+// browser can go, so it is written as `localhost`. `reply`: a line's URLs when the line is the
+// link alone or carries one of `openWords`. De-duplicated, in order of first appearance.
+export const linksIn = (text: string, mode: 'tool' | 'servers' | 'reply', openWords: string[] = []): string[] => {
+  const out: string[] = []
+  const words = openWords.map(w => w.toLowerCase())
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (mode === 'reply' && !ALONE_RE.test(line) && !words.some(w => line.toLowerCase().includes(w))) continue
+    if (mode !== 'servers') for (const u of line.match(URL_RE) ?? []) out.push(trimUrl(u))
+    for (const m of line.matchAll(SERVER_RE)) {
+      const host = m[1] === '0.0.0.0' ? 'localhost' : m[1]
+      out.push(trimUrl(`http://${host}:${m[2]}${m[3] ?? ''}`))
+    }
+  }
+  return [...new Set(out)]
+}
 
 // A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
 // it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the

@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -570,4 +570,35 @@ test('the status file counts files only, never links or folders', async ($, on) 
   await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
   await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
   expect(JSON.parse(writes[writes.length - 1] ?? '{}').files).toBe(1)
+})
+
+// ─── linksIn ─────────────────────────────────────────────────────────────────────────────────
+
+test('linksIn tool: the Artifact publish result and gh pr create output', () => {
+  const artifact = 'Published https://claude.ai/artifact/01HXYZ (private). This session now watches it.'
+  expect(linksIn(artifact, 'tool')).toEqual(['https://claude.ai/artifact/01HXYZ'])
+  const gh = 'Creating pull request for feat/x into main in LolerHero/claude-cockpit\n\nhttps://github.com/LolerHero/claude-cockpit/pull/12\n'
+  expect(linksIn(gh, 'tool')).toEqual(['https://github.com/LolerHero/claude-cockpit/pull/12'])
+})
+
+test('linksIn servers: the next dev banner yields its two addresses, registry URLs are left out', () => {
+  const banner = '   ▲ Next.js 15.3.0\n   - Local:        http://localhost:3030\n   - Network:      http://192.168.178.42:3030\n\nnpm notice see https://registry.npmjs.org/-/notice\n ✓ Ready in 1.2s'
+  expect(linksIn(banner, 'servers')).toEqual(['http://localhost:3030', 'http://192.168.178.42:3030'])
+})
+
+test('linksIn servers: a bare host:port is a link, and 0.0.0.0 becomes localhost', () => {
+  expect(linksIn('Serving on 0.0.0.0:8000 (press CTRL+C)', 'servers')).toEqual(['http://localhost:8000'])
+  expect(linksIn('listening at 127.0.0.1:5173/', 'servers')).toEqual(['http://127.0.0.1:5173/'])
+})
+
+test('linksIn reply: a bare link, a bullet and a markdown link count; a link in prose only with an open word', () => {
+  const words = ['open', 'öffne', 'view']
+  expect(linksIn('Done.\nhttps://claude.ai/artifact/a1\n', 'reply', words)).toEqual(['https://claude.ai/artifact/a1'])
+  expect(linksIn('- [the report](https://claude.ai/artifact/a2)', 'reply', words)).toEqual(['https://claude.ai/artifact/a2'])
+  expect(linksIn('Per the docs at https://nextjs.org/docs/app the route is static.', 'reply', words)).toEqual([])
+  expect(linksIn('Öffne https://claude.ai/artifact/a3 zum Gegenlesen.', 'reply', words)).toEqual(['https://claude.ai/artifact/a3'])
+})
+
+test('linksIn strips trailing punctuation and de-duplicates', () => {
+  expect(linksIn('see https://x.dev/a). Again: https://x.dev/a.', 'tool')).toEqual(['https://x.dev/a'])
 })
