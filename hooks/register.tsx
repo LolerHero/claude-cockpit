@@ -202,6 +202,8 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     await $.command.register({ name: 'files', description: 'Open a file this session produced' })
     await publish($)
+    // A file deleted outside Claude (Explorer, another shell) fires no hook: recount on a clock.
+    $.clock.every(30_000, () => void publish($))
     return started
   })
 
