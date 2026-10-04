@@ -495,6 +495,13 @@ export const register: Register = (on, options) => {
       page = 0
       focused = 0
       $.ui.invalidate('ui.render')
+      // Esc has already handed the keyboard back to the prompt before the close reaches us
+      // (Julian 2026-10-04: the list stayed, the focus went to the prompt). Ask for it again and
+      // put the ring on row 1; not awaited, the close is still being answered.
+      void $.ui
+        .open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true })
+        .then(() => $.ui.focus({ requestId: PANE, key: 'row:0' }))
+        .catch(() => null)
       return { value: undefined } // answered here: the pane stays
     }
     return next(e)

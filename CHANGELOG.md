@@ -22,6 +22,7 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   j k h, `9–15 of 15 · 2/2`, l; actions: o f, Enter, Esc), and a short last page is padded with
   blank rows so the hint never moves when a page turns. When two hint rows would cost an entry
   (inline, little room) the hint is one row of keys: o, f, then the walk, no prose.
+- Esc in find mode returns to the list with the keyboard still on the pane (it went to the prompt).
 - Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and an italic tail: the file's
   folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
   files is gone; the tail tells them apart.
