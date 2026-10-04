@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, linksIn, foldersIn, fuzzy, fuzzyScore, HINT_ROWS, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, foldersIn, replyPaths, fuzzy, fuzzyScore, HINT_ROWS, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -641,6 +641,22 @@ test('foldersIn command: mkdir with -p, quotes and several paths; git worktree a
 test('foldersIn reply: an absolute path alone on its line, with or without backticks; a path in prose or a relative one is not', () => {
   const reply = 'The worktree is here:\n`E:/Coding/.worktrees/hub/`\nand the report sits in E:/Coding/out which you can open.\nout/reports\n'
   expect(foldersIn(reply, 'reply')).toEqual(['E:/Coding/.worktrees/hub'])
+})
+
+test('replyPaths: a file:// link counts like a web link — alone, bulleted, markdown, or with an open word', () => {
+  const reply = [
+    '- file:///E:/Coding/tmp/note-01.md',
+    '[the folder](file:///E:/Coding/tmp)',
+    'file:///home/me/My%20Report.pdf',
+    'please open file:///E:/Coding/tmp/note-02.md.',
+    'it mentions file:///E:/Coding/tmp/note-03.md in prose',
+  ].join('\n')
+  expect(replyPaths(reply, ['open']).map(f => `${f.kind}:${f.target}`)).toEqual([
+    'file:E:/Coding/tmp/note-01.md',
+    'folder:E:/Coding/tmp',
+    'file:/home/me/My Report.pdf',
+    'file:E:/Coding/tmp/note-02.md',
+  ])
 })
 
 // ─── the hooks: links and folders from Bash, deploy tools, the rebuild ──────────────────────

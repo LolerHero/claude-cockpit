@@ -26,7 +26,7 @@ Keys: Enter or the row's digit (`1`–`8`) opens the row; `j`/`k` move the selec
 
 What counts:
 
-- **A file** when a person would open it: documents, images, spreadsheets, slides, archives, Markdown and HTML, written by a tool or produced by a command. Source code never counts, since that belongs in your editor. Also an absolute path to one alone on a reply line, when the file exists (Claude listing files it wants you to see).
+- **A file** when a person would open it: documents, images, spreadsheets, slides, archives, Markdown and HTML, written by a tool or produced by a command. Source code never counts, since that belongs in your editor. Also an absolute path to one alone on a reply line, when the file exists (Claude listing files it wants you to see). A `file://` link in a reply counts on the same lines a web link does (see below) and becomes the file or folder row it points at.
 - **A link** from a tool: an artifact publish, a `gh pr create` / `gh issue create` / `gh release create`, a deploy tool (`mcp__*deploy*`), and a dev server a command started (`localhost`, `127.0.0.1`, a LAN address with a port; `0.0.0.0` is shown as `localhost`). Other URLs in command output (registry notices, docs) are not collected. And from a reply, as it streams: a link alone on its line (bare, a bullet, or `[text](url)`), or on a line that contains one of the open words — `open, öffne, ansehen, view, review` by default, the `openWords` option in the config menu.
 - **A folder** this session made: `mkdir` and `git worktree add` in a command (once it exists), and an absolute path alone on a reply line that is a directory.
 

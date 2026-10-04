@@ -3,6 +3,14 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.1 — 2026-10-04
+
+Tested against Claude Code 2.1.289.
+
+- A `file://` link in a reply is a file or folder row: taken on the lines a web link is (alone,
+  a bullet, `[text](url)`, or a line with an open word), `file:///E:/x` read as `E:/x`, `%20`
+  decoded, and kept only when it exists. A bulleted bare path and a relative path still are not.
+
 ## v0.2.0 — 2026-10-04
 
 Tested against Claude Code 2.1.289.

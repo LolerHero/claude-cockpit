@@ -233,8 +233,35 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
 
 // An absolute path alone on a reply line: an openable file is a file row, anything else a folder row
 // (collect drops it unless it is a directory). Julian, 2026-10-04: a file Claude lists is one to open.
-export const replyPaths = (text: string): Found[] =>
-  foldersIn(text, 'reply').map(target => ({ kind: IS_OPENABLE.test(target) ? 'file' as const : 'folder' as const, target }))
+export const replyPaths = (text: string, openWords: string[] = []): Found[] =>
+  [...new Set([...foldersIn(text, 'reply'), ...fileLinksIn(text, openWords)])].map(target => ({
+    kind: IS_OPENABLE.test(target) ? 'file' as const : 'folder' as const,
+    target,
+  }))
+
+// A `file://` link in the reply, taken on the same lines as a web link (alone, `- url`, `[text](url)`,
+// or an open word) and turned into its path: `file:///E:/x` → `E:/x`, `%20` decoded.
+// ponytail: `file://host/share` (UNC) is not handled; no one has written one yet.
+const FILE_URL_RE = /file:\/\/([^\s<>()"'\]`]+)/g
+const FILE_ALONE_RE = /^(?:[-*]\s+)?(?:\[[^\]]*\]\()?`?file:\/\/\S+\)?$/
+const fileLinksIn = (text: string, openWords: string[]): string[] => {
+  const words = openWords.map(w => w.toLowerCase())
+  const out: string[] = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!FILE_ALONE_RE.test(line) && !words.some(w => line.toLowerCase().includes(w))) continue
+    for (const m of line.matchAll(FILE_URL_RE)) {
+      let p = trimUrl(m[1] ?? '').replace(/`$/, '')
+      try {
+        p = decodeURIComponent(p)
+      } catch {
+        // a stray % — keep it as written
+      }
+      out.push(norm(p.replace(/^\/([A-Za-z]:)/, '$1')))
+    }
+  }
+  return out
+}
 
 // fzf-flavoured: every query char in order; +3 for continuing a run, +2 at a word start, +1 elsewhere.
 // ponytail: greedy leftmost positions, not the best alignment; good enough for 48 short rows.
@@ -335,7 +362,7 @@ const rebuild = async ($: EngineInterface, openWords: string[]) => {
     for (const m of messages) {
       if (m.role === 'assistant' && m.text) {
         found.push(...linksIn(m.text, 'reply', openWords).map(link))
-        found.push(...replyPaths(m.text))
+        found.push(...replyPaths(m.text, openWords))
       }
       for (const use of m.toolUses ?? []) {
         if (use.isError) continue
@@ -407,7 +434,7 @@ export const register: Register = (on, options) => {
   on('classic.MessageDisplay', async ($, e, next) => {
     const found: Found[] = [
       ...linksIn(e.delta, 'reply', openWords).map(link),
-      ...replyPaths(e.delta),
+      ...replyPaths(e.delta, openWords),
     ]
     if (found.length) await collect($, found)
     return next(e)
