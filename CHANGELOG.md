@@ -3,6 +3,13 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.2 — 2026-10-04
+
+Tested against Claude Code 2.1.289.
+
+- A backtick ends a URL, so `` `https://x` `` in a reply is `https://x`, not `https://x` plus a
+  backtick. A bare `https://` in prose (no host) is no longer a link: it drew a row labelled `` ` ``.
+
 ## v0.2.1 — 2026-10-04
 
 Tested against Claude Code 2.1.289.
