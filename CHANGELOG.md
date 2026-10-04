@@ -12,7 +12,8 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   create`, deploy tools (`mcp__*deploy*`), dev servers a command started (`localhost`,
   `127.0.0.1`, a LAN address with a port; `0.0.0.0` reads as `localhost`), and from the reply as
   it streams when a link stands alone on its line or its line has an open word. Folders come
-  from `mkdir` and `git worktree add`, and from an absolute path alone on a reply line.
+  from `mkdir` and `git worktree add`, and from an absolute path alone on a reply line; the same
+  line naming an openable file that exists adds a file row.
 - Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and a muted tail: the file's
   folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
   files is gone; the tail tells them apart.

@@ -229,6 +229,11 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
   return [...new Set(out.map(norm))]
 }
 
+// An absolute path alone on a reply line: an openable file is a file row, anything else a folder row
+// (collect drops it unless it is a directory). Julian, 2026-10-04: a file Claude lists is one to open.
+export const replyPaths = (text: string): Found[] =>
+  foldersIn(text, 'reply').map(target => ({ kind: IS_OPENABLE.test(target) ? 'file' as const : 'folder' as const, target }))
+
 // fzf-flavoured: every query char in order; +3 for continuing a run, +2 at a word start, +1 elsewhere.
 // ponytail: greedy leftmost positions, not the best alignment; good enough for 48 short rows.
 const WORD_START = /[\s/\-_.:]/
@@ -328,7 +333,7 @@ const rebuild = async ($: EngineInterface, openWords: string[]) => {
     for (const m of messages) {
       if (m.role === 'assistant' && m.text) {
         found.push(...linksIn(m.text, 'reply', openWords).map(link))
-        found.push(...foldersIn(m.text, 'reply').map(target => ({ kind: 'folder' as const, target })))
+        found.push(...replyPaths(m.text))
       }
       for (const use of m.toolUses ?? []) {
         if (use.isError) continue
@@ -398,7 +403,7 @@ export const register: Register = (on, options) => {
   on('classic.MessageDisplay', async ($, e, next) => {
     const found: Found[] = [
       ...linksIn(e.delta, 'reply', openWords).map(link),
-      ...foldersIn(e.delta, 'reply').map(target => ({ kind: 'folder' as const, target })),
+      ...replyPaths(e.delta),
     ]
     if (found.length) await collect($, found)
     return next(e)

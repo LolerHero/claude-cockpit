@@ -716,6 +716,19 @@ test('a URL on the final, mid-line flush is collected whole', async ($, on) => {
   expect(list().map(e => e.target)).toEqual(['https://claude.ai/artifact/end'])
 })
 
+test('a reply listing files on their own lines adds file rows; a folder stays a folder, a file in prose is skipped', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
+  await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm4', index: 0, final: true,
+    delta: 'Here they are:\nE:\\Coding\\tmp\\note-01.md\n`E:/Coding/tmp/shot.png`\nE:/Coding/tmp\nSee E:/Coding/tmp/note-02.md for more.\nE:/Coding/tmp/script.ts\n' })
+  expect(list().map(e => [e.kind, e.target]).sort()).toEqual([
+    ['file', 'E:/Coding/tmp/note-01.md'],
+    ['file', 'E:/Coding/tmp/shot.png'],
+    ['folder', 'E:/Coding/tmp'],
+  ])
+})
+
 test('openWords from the option: a custom word counts, the default ones no longer do', { options: { openWords: 'schau' } }, async ($, on) => {
   disk(on)
   const list = watchState(on)
