@@ -34,6 +34,6 @@ jobs:
       # THE PIN. This is the build the current release is tested against (CHANGELOG.md says which).
       # Bumping it is the release procedure in MAINTAINABILITY.md → Releasing: change it on a
       # branch, let CI run; green → plugin.json version, CHANGELOG entry, tag, release.
-      - run: npm install -g @anthropic-ai/claude-code@2.1.288
+      - run: npm install -g @anthropic-ai/claude-code@2.1.289
       - run: claude plugin validate .
       - run: claude plugin test .

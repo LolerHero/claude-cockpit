@@ -5,7 +5,7 @@ so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
 ## v0.2.0 — 2026-10-04
 
-Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
+Tested against Claude Code 2.1.289.
 
 - The `/files` pane is a session hub: files, links and folders this session produced, in one
   list, newest first, the newest 48 kept. Links come from artifact publishes, `gh pr|issue|release

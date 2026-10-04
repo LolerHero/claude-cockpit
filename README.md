@@ -34,7 +34,7 @@ A file or folder that vanished drops off the list; a link is never checked. The 
 
 ## Requirements
 
-- Claude Code 2.1.288 or later. Built and tested against 2.1.288. The plugin hooks API is young and may move.
+- Claude Code 2.1.289 or later. Built and tested against 2.1.289. The plugin hooks API is young and may move.
 - Node 22 or later.
 - A Nerd Font for the file and clock icons, or set glyphs to `plain`.
 - wezterm is optional. With it the status line reads the exact pane width. Without it, it uses the width the mod measured, and 80 columns if that is missing.
