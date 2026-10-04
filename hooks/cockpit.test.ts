@@ -362,9 +362,11 @@ const mountInline = ($: any, bodyRows: number) =>
 test('inline with few rows, a page is as long as the rows granted, the hint still drawn', async ($, on) => {
   await writeMany($, on, 20)
   const tree = JSON.stringify(await (await mountInline($, 5)).drawn())
-  expect(labels(tree)).toEqual(['f20', 'f19', 'f18']) // 5 rows less the two hint rows
-  expect(tree).toContain('1/7')
-  expect(tree).toContain('Esc')
+  // Tight: one hint row of keys (o, f, then the walk), no prose, so 4 of the 5 rows are entries.
+  expect(labels(tree)).toEqual(['f20', 'f19', 'f18', 'f17'])
+  expect(tree).toContain('1–4 of 20 · 1/5')
+  for (const k of ['nav:o', 'nav:f', 'nav:j', 'nav:k', 'nav:h', 'nav:l']) expect(tree).toContain(k)
+  expect(tree).not.toContain('Esc closes')
 })
 
 test('inline, the image preview is left out before any row is', async ($, on) => {

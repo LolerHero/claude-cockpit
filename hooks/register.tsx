@@ -534,9 +534,14 @@ export const register: Register = (on, options) => {
     // it: the hint fell off and the arrows scrolled instead of walking.
     const body = e.props?.scroll?.bodyRows ?? Infinity
     // The Input takes a row off the page while it is up.
-    const perPage = Math.max(1, Math.min(PER_PAGE, body - HINT_ROWS - (filtering ? 1 : 0)))
     // The pages are cut from `pool`: the list newest first, or the matches best first.
     const pool = filtering && query ? fuzzy(query, list) : list.slice().reverse()
+    // Two hint rows only when they cost no entry; tight (inline under a long transcript) the hint is
+    // one row of keys, o and f first, the walk after them, no prose (Julian 2026-10-04: the walk is
+    // learned once, o and f are rarer). Hidden Buttons would lose their hotkeys, so the keys stay.
+    const room = body - (filtering ? 1 : 0)
+    const hintRows = room - HINT_ROWS >= Math.min(PER_PAGE, Math.max(1, pool.length)) ? HINT_ROWS : 1
+    const perPage = Math.max(1, Math.min(PER_PAGE, room - hintRows))
     const pages = Math.max(1, Math.ceil(pool.length / perPage))
     page = Math.min(page, pages - 1) // a file deleted since can shorten the list under us
     const shown = pool.slice(page * perPage, (page + 1) * perPage)
@@ -611,7 +616,7 @@ export const register: Register = (on, options) => {
     // The newest file only, on page 1 only, and not while filtering (the list needs the rows):
     // it is what `openPane` asked rows for. Left out when the body cannot hold it under the rows
     // and the hint: a row is worth more than a preview.
-    const roomForImage = body >= shown.length + HINT_ROWS + IMAGE_ROWS + 1
+    const roomForImage = body >= shown.length + hintRows + IMAGE_ROWS + 1
     if (page === 0 && !filtering && e.surface === 'terminal' && isPng(newest.target) && roomForImage) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
@@ -672,51 +677,68 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
         ))}
-        {/* The hint, always drawn, two rows (HINT_ROWS): its keys are live Buttons (`j: ↓`), so it cannot
+        {/* The hint, always drawn, two rows (HINT_ROWS) or one when tight: its keys are live Buttons (`j: ↓`), so it cannot
             drift from what works. `openPane` counts these rows. */}
         {/* A short last page keeps the page's height (Julian 2026-10-04): the hint stays where it was,
             so a turn from 8 rows to 7 reads as a turn, not as an entry gone. Only with a second page. */}
         {pages > 1
           ? Array.from({ length: perPage - shown.length }, (_, i) => <Text key={`pad:${i}`}> </Text>)
           : null}
-        <Box flexDirection="row" columnGap={1}>
-          <Button key={NAV.j} plain dimColor hotkey="j" onPress={down}>
-            ↓
-          </Button>
-          <Button key={NAV.k} plain dimColor hotkey="k" onPress={up}>
-            ↑
-          </Button>
-          {pages > 1 ? (
-            <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
-              ‹
-            </Button>
-          ) : null}
-          {pages > 1 ? (
-            <Box flexShrink={0}>
-              {/* Which entries, not only which page: a wrap from page 1 to a shorter last page read as
-                  an entry lost (Julian 2026-10-04, 15 entries: 8 then 7). */}
-              <Text bold>{`${page * perPage + 1}–${page * perPage + shown.length} of ${pool.length} · ${page + 1}/${pages}`}</Text>
+        {(() => {
+          const walk = [
+            <Button key={NAV.j} plain dimColor hotkey="j" onPress={down}>
+              ↓
+            </Button>,
+            <Button key={NAV.k} plain dimColor hotkey="k" onPress={up}>
+              ↑
+            </Button>,
+            ...(pages > 1
+              ? [
+                  <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
+                    ‹
+                  </Button>,
+                  // Which entries, not only which page: a wrap from page 1 to a shorter last page read
+                  // as an entry lost (Julian 2026-10-04, 15 entries: 8 then 7).
+                  <Box key="range" flexShrink={0}>
+                    <Text bold>{`${page * perPage + 1}–${page * perPage + shown.length} of ${pool.length} · ${page + 1}/${pages}`}</Text>
+                  </Box>,
+                  <Button key={NAV.l} plain dimColor hotkey="l" onPress={turn(page + 1)}>
+                    ›
+                  </Button>,
+                ]
+              : []),
+          ]
+          const acts = [
+            <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
+              folder
+            </Button>,
+            ...(filtering
+              ? []
+              : [
+                  <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
+                    find
+                  </Button>,
+                ]),
+          ]
+          return hintRows === HINT_ROWS ? (
+            <>
+              <Box flexDirection="row" columnGap={1}>
+                {walk}
+              </Box>
+              <Box flexDirection="row" columnGap={1}>
+                {acts}
+                <Text wrap="truncate-end">
+                  {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
+                </Text>
+              </Box>
+            </>
+          ) : (
+            <Box flexDirection="row" columnGap={1}>
+              {acts}
+              {walk}
             </Box>
-          ) : null}
-          {pages > 1 ? (
-            <Button key={NAV.l} plain dimColor hotkey="l" onPress={turn(page + 1)}>
-              ›
-            </Button>
-          ) : null}
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
-            folder
-          </Button>
-          {filtering ? null : (
-            <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
-              find
-            </Button>
-          )}
-          <Text wrap="truncate-end">
-            {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
-          </Text>
-        </Box>
+          )
+        })()}
         {inline}
       </Box>
     )

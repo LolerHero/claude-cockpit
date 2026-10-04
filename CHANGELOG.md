@@ -20,7 +20,8 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   terminal's foreground. The hint drops its doubled key labels (`o: folder`, not `o: o: folder`), and the
   page count no longer breaks over three lines in a narrow hint row. The hint is two rows (walk:
   j k h, `9–15 of 15 · 2/2`, l; actions: o f, Enter, Esc), and a short last page is padded with
-  blank rows so the hint never moves when a page turns.
+  blank rows so the hint never moves when a page turns. When two hint rows would cost an entry
+  (inline, little room) the hint is one row of keys: o, f, then the walk, no prose.
 - Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and an italic tail: the file's
   folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
   files is gone; the tail tells them apart.
