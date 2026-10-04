@@ -12,6 +12,7 @@ so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 - The pane closes itself once a file has opened; a failed open keeps it and says why.
 - Below 110 columns (the pane sits above the prompt) a page is as long as the rows the terminal grants, so the hint and the keys keep working; the image preview gives way first.
 - One file reached as `e:` and `E:` is one row; two files with the same name show their folder (`button.md · contracts`).
+- An empty list is rebuilt from the transcript when the pane opens and at session start (Write calls and screenshots): a trip through the agent screen gives the same conversation a new session id and an empty plugin state.
 
 ## v0.1.0 — 2026-10-04
 

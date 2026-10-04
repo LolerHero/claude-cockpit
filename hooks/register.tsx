@@ -174,6 +174,39 @@ const collect = async ($: EngineInterface, paths: string[], since?: number, root
   await publish($)
 }
 
+// The tools whose answer names a file they produced. Bash is collected live (its call time
+// separates produced from merely printed) but never replayed, where that time is gone.
+const SCREENSHOT_TOOLS = [
+  'mcp__playwright__browser_take_screenshot',
+  'mcp__claude-in-chrome__computer',
+  'mcp__plugin_figma_figma__get_screenshot',
+]
+
+// The list is host state for the session id; a trip through the agent screen hands the same
+// conversation a new id and an empty state. The transcript survives it, so an empty list is
+// rebuilt from it, oldest first so the newest call ends up on top. Never rejects.
+const rebuild = async ($: EngineInterface) => {
+  try {
+    const messages = await $.session.messages()
+    const roots = [await $.session.root().catch(() => ''), await $.session.cwd().catch(() => '')].filter(Boolean)
+    const found: string[] = []
+    for (const m of messages) {
+      for (const use of m.toolUses ?? []) {
+        if (use.isError) continue
+        if (use.tool === 'Write' && typeof use.input?.file_path === 'string') {
+          const path = use.input.file_path.replace(/\\/g, '/')
+          if (IS_OPENABLE.test(path)) found.push(path)
+        } else if (SCREENSHOT_TOOLS.includes(use.tool)) {
+          found.push(...pathsIn(use.result ?? use.text ?? ''))
+        }
+      }
+    }
+    if (found.length) await collect($, found, undefined, roots)
+  } catch {
+    // no transcript to read (a fresh session): the list stays empty
+  }
+}
+
 // Open as a dialog: it takes the keyboard at once (so a hotkey works without `ctrl+x tab`), Esc
 // closes it, and toasts wait behind it rather than landing on the list being picked from.
 // `rows` is what makes the arrows walk the list: a dialog tall enough to show whole has nothing
@@ -181,6 +214,9 @@ const collect = async ($: EngineInterface, paths: string[], since?: number, root
 // opened a third tall, a 20-row image box made the list scroll and the arrows dead).
 // One page at most, never the whole list: see PER_PAGE.
 const openPane = async ($: EngineInterface) => {
+  // An empty list may be a new session id over an old conversation: rebuild it before opening.
+  // Here, not in the draw: the host refuses a state write while a render is dispatched.
+  if (!(await stored($)).length) await rebuild($)
   const list = await stored($)
   const newest = list[list.length - 1]
   page = 0
@@ -207,6 +243,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'files', description: 'Open a file this session produced' })
+    await rebuild($) // a resumed or re-identified conversation: the count is right before /files
     await publish($)
     // A file deleted outside Claude (Explorer, another shell) fires no hook: recount on a clock.
     $.clock.every(30_000, () => void publish($))
@@ -229,12 +266,7 @@ export const register: Register = (on, options) => {
 
   // Everything else: read the answer, keep what is openable AND on disk. Bash is here because
   // the scripts that produce the real artefacts — invoices, reports — are run, not written.
-  for (const tool of [
-    'Bash',
-    'mcp__playwright__browser_take_screenshot',
-    'mcp__claude-in-chrome__computer',
-    'mcp__plugin_figma_figma__get_screenshot',
-  ]) {
+  for (const tool of ['Bash', ...SCREENSHOT_TOOLS]) {
     on('tool.call', { tool }, async ($, e, next) => {
       const since = await $.clock.now()
       const ran = await next(e)

@@ -261,6 +261,40 @@ test('l turns to page 2 and h back, the hint always in the tree', async ($, on) 
   expect(tree).toContain('2/3')
 })
 
+// The list is host state for the session id. A trip through the agent screen hands the same
+// conversation a new id and an empty state (Julian, 2026-10-04: same history, empty pane). The
+// transcript survives, so an empty list is rebuilt from it: Writes and screenshots, which name
+// the file they produced. Bash is left out on replay: without the call's time, a file a command
+// only mentioned cannot be told from one it produced.
+test('an empty list is rebuilt from the transcript, Bash left out', async ($, on) => {
+  on('session.messages', async () => ({
+    value: [
+      { role: 'user', text: 'make files', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'a', tool: 'Write', input: { file_path: 'E:/work/a.md' }, text: 'ok' },
+          { tool_use_id: 'b', tool: 'Write', input: { file_path: 'E:/work/src/b.ts' }, text: 'ok' },
+          { tool_use_id: 'c', tool: 'Write', input: { file_path: 'E:/work/c.pdf' }, isError: true, text: 'denied' },
+          { tool_use_id: 'd', tool: 'Bash', input: { command: 'git status' }, text: ' M README.md' },
+          { tool_use_id: 'e', tool: 'mcp__playwright__browser_take_screenshot', input: {}, text: 'saved to E:/work/shot.png' },
+        ],
+      },
+    ],
+  }))
+  disk(on)
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  // Opening rebuilds (a draw may not write state: the host refuses it).
+  await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: true, columns: 144 } })
+  const tree = await drawPane($)
+  expect(tree).toContain('Open a.md')
+  expect(tree).toContain('Open shot.png')
+  expect(tree).not.toContain('b.ts') // source, never listed
+  expect(tree).not.toContain('c.pdf') // the Write failed
+  expect(tree).not.toContain('README.md') // Bash: not replayed
+})
+
 // Two rows read „button.md“ and nothing said whether they were one file or two (Julian,
 // 2026-10-04). One file reached by two spellings of its drive is one row; two files with one
 // name each say their folder.
