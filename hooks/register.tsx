@@ -345,9 +345,24 @@ const openerFor = async ($: EngineInterface, path: string): Promise<string[]> =>
   return [(uname?.stdout ?? '').trim() === 'Darwin' ? 'open' : 'xdg-open', path]
 }
 
+// The `openWords` option: comma-separated, trimmed, case folded in `linksIn`.
+const wordsOf = (v: unknown) => String(v ?? '').split(',').map(w => w.trim()).filter(Boolean)
+
 export const register: Register = (on, options) => {
   const palette = paletteOf(options.palette)
-  const openWords: string[] = [] // Task 5 reads it from `options.openWords`
+  const openWords = wordsOf(options.openWords)
+
+  // The reply as it streams: every flush is whole lines but the last, which ends the message, so
+  // each line is complete when read and a URL is never taken half. Passed on: a settings hook
+  // beneath still runs.
+  on('classic.MessageDisplay', async ($, e, next) => {
+    const found: Found[] = [
+      ...linksIn(e.delta, 'reply', openWords).map(link),
+      ...foldersIn(e.delta, 'reply').map(target => ({ kind: 'folder' as const, target })),
+    ]
+    if (found.length) await collect($, found)
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

@@ -21,6 +21,13 @@
       "required": false,
       "default": "nerd",
       "options": ["nerd", "plain"]
+    },
+    "openWords": {
+      "type": "string",
+      "title": "Open words",
+      "description": "Comma-separated words. A link in a reply is listed in the files pane when its line contains one of them, or when the link stands alone on its line.",
+      "required": false,
+      "default": "open, öffne, ansehen, view, review"
     }
   }
 }

@@ -679,3 +679,42 @@ test('an empty list is rebuilt with artifact links and reply links too', async (
   await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
   expect(list().map(e => e.target).sort()).toEqual(['/work/a.md', 'https://claude.ai/artifact/p1', 'https://claude.ai/artifact/r1'])
 })
+
+// ─── the reply as it streams ─────────────────────────────────────────────────────────────────
+
+test('a reply link on its own line is collected as it streams; prose links need an open word', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
+  const flush = (index: number, delta: string, final = false) =>
+    $.classic.MessageDisplay({ turn_id: 't', message_id: 'm1', index, final, delta })
+  await flush(0, 'The page is published.\n')
+  await flush(1, 'https://claude.ai/artifact/s1\nDocs: https://nextjs.org/docs explain it.\n')
+  await flush(2, 'View https://claude.ai/artifact/s2 when you can.', true)
+  expect(list().map(e => e.target)).toEqual(['https://claude.ai/artifact/s1', 'https://claude.ai/artifact/s2'])
+})
+
+test('a URL on the final, mid-line flush is collected whole', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
+  await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm2', index: 0, final: false, delta: 'Open it:\n' })
+  await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm2', index: 1, final: true, delta: 'https://claude.ai/artifact/end' })
+  expect(list().map(e => e.target)).toEqual(['https://claude.ai/artifact/end'])
+})
+
+test('openWords from the option: a custom word counts, the default ones no longer do', { options: { openWords: 'schau' } }, async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
+  await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm3', index: 0, final: true, delta: 'Schau https://a.dev/1 an.\nOpen https://a.dev/2 too.\n' })
+  expect(list().map(e => e.target)).toEqual(['https://a.dev/1'])
+})
+
+test('a folder path alone on a reply line is collected when it is a directory', async ($, on) => {
+  disk(on)
+  const list = watchState(on)
+  on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
+  await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm4', index: 0, final: true, delta: 'Worktree:\n/work/wt/feat\n' })
+  expect(list().map(e => `${e.kind}:${e.target}`)).toEqual(['folder:/work/wt/feat'])
+})
