@@ -279,12 +279,18 @@ export const register: Register = (on, options) => {
     }
 
     const newest = list[list.length - 1]
-    const pages = Math.ceil(list.length / PER_PAGE)
+    // A page is as long as the body the surface granted, less the hint row. Docked (fullscreen
+    // from 110 columns) that is floor to ceiling; inline above the prompt it is what the layout
+    // spares, which a wrapped prompt shortens. A page taller than the body made the engine scroll
+    // it: the hint fell off and the arrows scrolled instead of walking.
+    const body = e.props?.scroll?.bodyRows ?? Infinity
+    const perPage = Math.max(1, Math.min(PER_PAGE, body - 1))
+    const pages = Math.ceil(list.length / perPage)
     page = Math.min(page, pages - 1) // a file deleted since can shorten the list under us
     const shown = list
       .slice()
       .reverse()
-      .slice(page * PER_PAGE, (page + 1) * PER_PAGE)
+      .slice(page * perPage, (page + 1) * perPage)
     const last = shown.length - 1
 
     // j past the last row turns to the next page's first; k before the first, to the previous
@@ -295,7 +301,7 @@ export const register: Register = (on, options) => {
       focused > 0
         ? go($, page, focused - 1)
         : page > 0
-          ? go($, page - 1, PER_PAGE - 1)
+          ? go($, page - 1, perPage - 1)
           : undefined
     const turn = (to: number) => () => (to >= 0 && to < pages ? go($, to, 0) : undefined)
 
@@ -312,8 +318,10 @@ export const register: Register = (on, options) => {
         .catch(() => $.ui.toast(`could not open ${label(path)}`))
 
     let inline = null
-    // The newest file only, on page 1 only: it is what `openPane` asked rows for.
-    if (page === 0 && e.surface === 'terminal' && isPng(newest.path)) {
+    // The newest file only, on page 1 only: it is what `openPane` asked rows for. Left out when
+    // the body cannot hold it under the rows and the hint: a row is worth more than a preview.
+    const roomForImage = body >= shown.length + 1 + IMAGE_ROWS + 1
+    if (page === 0 && e.surface === 'terminal' && isPng(newest.path) && roomForImage) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
       const { Image } = $.ui.resolve(e)

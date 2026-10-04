@@ -261,6 +261,38 @@ test('l turns to page 2 and h back, the hint always in the tree', async ($, on) 
   expect(tree).toContain('2/3')
 })
 
+// Below 110 columns the terminal seats the pane inline above the prompt, and it gets only the rows
+// the layout spares (a wrapped prompt takes one more). A page taller than that made the engine
+// scroll the body: the hint fell off the bottom and the arrows scrolled instead of walking
+// (Julian, half-width WezTerm, 2026-10-04). The page shrinks to the rows granted instead.
+const mountInline = ($: any, bodyRows: number) =>
+  $.ui.mount({
+    plugin: 'cockpit',
+    surface: 'terminal',
+    component: 'Pane',
+    props: { ...PANE_PROPS, placement: 'inline', scroll: { offset: 0, bodyRows } },
+    requestId: 'files',
+  })
+
+test('inline with few rows, a page is as long as the rows granted, the hint still drawn', async ($, on) => {
+  await writeMany($, on, 20)
+  const tree = JSON.stringify(await (await mountInline($, 5)).drawn())
+  expect(labels(tree)).toEqual(['f20', 'f19', 'f18', 'f17'])
+  expect(tree).toContain('1/5')
+  expect(tree).toContain('Esc')
+})
+
+test('inline, the image preview is left out before any row is', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  for (let i = 1; i <= 3; i++) await $.tool.call({ tool: 'Write', file_path: `/work/f${i}.pdf`, content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
+  const tree = JSON.stringify(await (await mountInline($, 8)).drawn())
+  expect(tree).toContain('Open shot.png')
+  expect(tree).toContain('Open f1.pdf')
+  expect(tree).not.toContain('"type":"Image"')
+})
+
 // Opening a file hands the person to another app; coming back to an open pane they then have to
 // dismiss is the wrong way round (Julian, 2026-10-04). A failed open keeps the pane to pick again.
 const pressOpen = async ($: any, on: any, exitCode: number) => {

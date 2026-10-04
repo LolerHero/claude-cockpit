@@ -10,6 +10,7 @@ so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
   is always drawn, and the pane asks at most one page of rows (20 with a PNG preview), so it never
   outgrows the terminal. A stored list longer than 32 is trimmed when read.
 - The pane closes itself once a file has opened; a failed open keeps it and says why.
+- Below 110 columns (the pane sits above the prompt) a page is as long as the rows the terminal grants, so the hint and the keys keep working; the image preview gives way first.
 
 ## v0.1.0 — 2026-10-04
 
