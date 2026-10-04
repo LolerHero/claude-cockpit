@@ -180,6 +180,37 @@ export const linksIn = (text: string, mode: 'tool' | 'servers' | 'reply', openWo
   return [...new Set(out)]
 }
 
+const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
+// `command`: the paths `mkdir` and `git worktree add` name (quotes honoured, `-b <branch>` skipped).
+// `reply`: an absolute path alone on its line, backticks or not — a relative one is not taken, the
+// reply has no cwd of its own (Julian, 2026-10-04). Forward slashes, no trailing slash, de-duplicated.
+// ponytail: a `mkdir` behind `cd x &&` is taken relative to the session cwd, not `x`; `resolve`
+// drops it when it does not exist there.
+export const foldersIn = (text: string, source: 'command' | 'reply'): string[] => {
+  const out: string[] = []
+  if (source === 'reply') {
+    for (const raw of text.split('\n')) {
+      const m = /^`?((?:[A-Za-z]:[\\/]|\/)[^\s`]*)`?$/.exec(raw.trim())
+      if (m?.[1]) out.push(norm(m[1]))
+    }
+    return [...new Set(out)]
+  }
+  for (const part of text.split(/&&|\|\||;|\|/)) {
+    const words = (part.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(w => w.replace(/^["']|["']$/g, ''))
+    if (words[0] === 'mkdir') out.push(...words.slice(1).filter(w => !w.startsWith('-')))
+    if (words[0] === 'git' && words[1] === 'worktree' && words[2] === 'add') {
+      const args: string[] = []
+      for (let i = 3; i < words.length; i++) {
+        const w = words[i] ?? ''
+        if (w === '-b' || w === '-B') i++ // the branch name, not a path
+        else if (!w.startsWith('-')) args.push(w)
+      }
+      if (args[0]) out.push(args[0])
+    }
+  }
+  return [...new Set(out.map(norm))]
+}
+
 // A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
 // it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the
 // focus ring with them. So rows take 1–8 and the navigation takes h/j/k/l, as Buttons of its own.

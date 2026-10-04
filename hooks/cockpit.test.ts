@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, linksIn, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, foldersIn, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -601,4 +601,18 @@ test('linksIn reply: a bare link, a bullet and a markdown link count; a link in 
 
 test('linksIn strips trailing punctuation and de-duplicates', () => {
   expect(linksIn('see https://x.dev/a). Again: https://x.dev/a.', 'tool')).toEqual(['https://x.dev/a'])
+})
+
+// ─── foldersIn ───────────────────────────────────────────────────────────────────────────────
+
+test('foldersIn command: mkdir with -p, quotes and several paths; git worktree add with and without -b', () => {
+  expect(foldersIn('mkdir -p out/reports "E:/Work/my dir" && ls', 'command')).toEqual(['out/reports', 'E:/Work/my dir'])
+  expect(foldersIn("git worktree add '../wt/feat-x' feat/x", 'command')).toEqual(['../wt/feat-x'])
+  expect(foldersIn('git worktree add -b feat/y E:\\Work\\.worktrees\\feat-y main', 'command')).toEqual(['E:/Work/.worktrees/feat-y'])
+  expect(foldersIn('git status; npm test', 'command')).toEqual([])
+})
+
+test('foldersIn reply: an absolute path alone on its line, with or without backticks; a path in prose or a relative one is not', () => {
+  const reply = 'The worktree is here:\n`E:/Coding/.worktrees/hub/`\nand the report sits in E:/Coding/out which you can open.\nout/reports\n'
+  expect(foldersIn(reply, 'reply')).toEqual(['E:/Coding/.worktrees/hub'])
 })
