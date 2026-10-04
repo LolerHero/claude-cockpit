@@ -18,7 +18,6 @@ import { atom, read, update } from 'claude-code'
 import type { Register, EngineInterface } from 'claude-code'
 
 import type { Doc, Entry, EntryKind } from '../types'
-import { paletteOf } from '../palettes.js'
 
 const PANE = 'files'
 export const KEEP = 48
@@ -394,7 +393,6 @@ const openerFor = async ($: EngineInterface, target: string): Promise<string[]> 
 const wordsOf = (v: unknown) => String(v ?? '').split(',').map(w => w.trim()).filter(Boolean)
 
 export const register: Register = (on, options) => {
-  const palette = paletteOf(options.palette)
   const openWords = wordsOf(options.openWords)
 
   // The reply as it streams: every flush is whole lines but the last, which ends the message, so
@@ -515,7 +513,7 @@ export const register: Register = (on, options) => {
     if (!newest) {
       return (
         <Box flexDirection="column">
-          <Text color={palette.subtle}>Nothing to open yet this session.</Text>
+          <Text>Nothing to open yet this session.</Text>
         </Box>
       )
     }
@@ -632,7 +630,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column">
           {header}
-          <Text color={palette.subtle}>{`No match for ‹${query}›.`}</Text>
+          <Text>{`No match for ‹${query}›.`}</Text>
         </Box>
       )
     }
@@ -657,7 +655,10 @@ export const register: Register = (on, options) => {
             >
               {`${MARK[entry.kind]} ${entry.label}`}
             </Button>
-            <Text color={palette.muted} wrap="truncate-end">
+            {/* No palette colour on the pane: the ground is the engine's dialog (grey-blue in some
+                terminal themes), where hues picked for a dark ground read at ~2:1 (Julian
+                2026-10-04). The terminal's own foreground stays readable; italic sets the tail apart. */}
+            <Text italic wrap="truncate-end">
               {entry.tail}
             </Text>
           </Box>
@@ -672,14 +673,18 @@ export const register: Register = (on, options) => {
             ↑
           </Button>
           <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
-            o: folder
+            folder
           </Button>
           {pages > 1 ? (
             <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
               ‹
             </Button>
           ) : null}
-          {pages > 1 ? <Text color={palette.muted}>{`${page + 1}/${pages}`}</Text> : null}
+          {pages > 1 ? (
+            <Box flexShrink={0}>
+              <Text>{`${page + 1}/${pages}`}</Text>
+            </Box>
+          ) : null}
           {pages > 1 ? (
             <Button key={NAV.l} plain dimColor hotkey="l" onPress={turn(page + 1)}>
               ›
@@ -687,10 +692,10 @@ export const register: Register = (on, options) => {
           ) : null}
           {filtering ? null : (
             <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
-              f: find
+              find
             </Button>
           )}
-          <Text color={palette.muted} wrap="truncate-end">
+          <Text wrap="truncate-end">
             {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · f finds · Esc closes'}
           </Text>
         </Box>

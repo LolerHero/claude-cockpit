@@ -14,7 +14,10 @@ Tested against Claude Code 2.1.288 (the CI pin) and 2.1.289 (locally).
   it streams when a link stands alone on its line or its line has an open word. Folders come
   from `mkdir` and `git worktree add`, and from an absolute path alone on a reply line; the same
   line naming an openable file that exists adds a file row.
-- Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and a muted tail: the file's
+- The pane keeps the terminal's own foreground: palette hues on the engine's grey dialog ground
+  read at ~2:1. The hint drops its doubled key labels (`o: folder`, not `o: o: folder`), and the
+  page count no longer breaks over three lines in a narrow hint row.
+- Each row carries a kind marker (`▪` file, `↗` link, `▸` folder) and an italic tail: the file's
   folder, the link's host and port, the folder's parent. The `· folder` suffix for same-named
   files is gone; the tail tells them apart.
 - `o` opens the folder the row sits in (a folder opens itself; a link says it has none).

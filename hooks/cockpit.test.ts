@@ -96,8 +96,8 @@ test("an image's fallback says why there is no picture", async ($, on) => {
 
 test('the ansi palette reaches the module as its option', { options: { palette: 'ansi' } }, async ($, on) => {
   on('session.start', async () => ({ cwd: CWD })) // the bottom of the chain: core's answer
-  // The manifest's picker value arrives in `register(on, options)`; the pane paints `subtle`
-  // from it, so the one thing to pin is that the value is honoured, not the drawing.
+  // The manifest's picker value arrives in `register(on, options)`; the status line paints from
+  // it (the pane keeps the terminal's colours), so the one thing to pin is the lookup.
   await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
   expect(paletteOf('ansi').subtle).toBe('white')
 })
