@@ -225,10 +225,13 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
   return [...new Set(out.map(norm))]
 }
 
+// The kind, one glyph a row: a file, a link out, a folder in.
+const MARK: Record<EntryKind, string> = { file: '▪', link: '↗', folder: '▸' }
+
 // A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
 // it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the
 // focus ring with them. So rows take 1–8 and the navigation takes h/j/k/l, as Buttons of its own.
-const NAV = { j: 'nav:j', k: 'nav:k', h: 'nav:h', l: 'nav:l' } as const
+const NAV = { j: 'nav:j', k: 'nav:k', h: 'nav:h', l: 'nav:l', o: 'nav:o' } as const
 const isNav = (key: string | undefined) => !!key?.startsWith('nav:')
 
 // Turns to `to` (clamped by the caller), redraws, and puts the ring on row `row` of it.
@@ -334,15 +337,20 @@ const openPane = async ($: EngineInterface, openWords: string[]) => {
 }
 
 // The host's own opener, no shell. Windows: `cmd /c start "" <path>` — the empty string is
-// `start`'s title argument, without it a quoted path becomes the title. macOS: `open`. Linux:
-// `xdg-open`. A failure says so: a silent dead press is the worst outcome for a button.
-const openerFor = async ($: EngineInterface, path: string): Promise<string[]> => {
+// `start`'s title argument, without it a quoted path becomes the title; a URL goes through the
+// URL handler instead, because `cmd /c start` re-parses its line and an `&` in a query string
+// would split it. macOS: `open`. Linux: `xdg-open` (both take a URL as they take a path). A
+// failure says so: a silent dead press is the worst outcome for a button.
+const openerFor = async ($: EngineInterface, target: string): Promise<string[]> => {
   const os = ((await $.env.get('OS').catch(() => null)) ?? '').toLowerCase()
-  if (os.includes('windows') || (await $.env.get('USERPROFILE').catch(() => null))) {
-    return ['cmd', '/c', 'start', '', path.replace(/\//g, '\\')]
+  const windows = os.includes('windows') || !!(await $.env.get('USERPROFILE').catch(() => null))
+  if (windows) {
+    return /^https?:\/\//.test(target)
+      ? ['rundll32', 'url.dll,FileProtocolHandler', target]
+      : ['cmd', '/c', 'start', '', target.replace(/\//g, '\\')]
   }
   const uname = await $.process.run(['uname'], { timeoutMs: 2000 }).catch(() => null)
-  return [(uname?.stdout ?? '').trim() === 'Darwin' ? 'open' : 'xdg-open', path]
+  return [(uname?.stdout ?? '').trim() === 'Darwin' ? 'open' : 'xdg-open', target]
 }
 
 // The `openWords` option: comma-separated, trimmed, case folded in `linksIn`.
@@ -463,7 +471,7 @@ export const register: Register = (on, options) => {
     if (!list.length) {
       return (
         <Box flexDirection="column">
-          <Text color={palette.subtle}>Nothing written yet this session.</Text>
+          <Text color={palette.subtle}>Nothing to open yet this session.</Text>
         </Box>
       )
     }
@@ -482,10 +490,6 @@ export const register: Register = (on, options) => {
       .reverse()
       .slice(page * perPage, (page + 1) * perPage)
     const last = shown.length - 1
-    // A name two listed files share gets its folder, so the rows say which is which.
-    const counts = new Map<string, number>()
-    for (const d of list) counts.set(d.label, (counts.get(d.label) ?? 0) + 1)
-    const rowLabel = (d: Entry) => ((counts.get(d.label) ?? 0) > 1 ? `${d.label} · ${folderOf(d.target)}` : d.label)
 
     // j past the last row turns to the next page's first; k before the first, to the previous
     // page's last. At the list's two ends they stay put.
@@ -499,17 +503,25 @@ export const register: Register = (on, options) => {
           : undefined
     const turn = (to: number) => () => (to >= 0 && to < pages ? go($, to, 0) : undefined)
 
-    // A file that opened takes the person to another app; the pane closes behind it, so they do
+    // A thing that opened takes the person to another app; the pane closes behind it, so they do
     // not come back to a dialog they have to dismiss. A failed open keeps it to pick again.
-    const open = (path: string) => () =>
-      openerFor($, path)
+    const open = (entry: Entry) => () =>
+      openerFor($, entry.target)
         .then(cmd => $.process.run(cmd))
         .then(r =>
           r.exitCode === 0
             ? $.ui.close({ id: PANE })
-            : $.ui.toast(`could not open ${label(path)} (exit ${r.exitCode})`),
+            : $.ui.toast(`could not open ${entry.label} (exit ${r.exitCode})`),
         )
-        .catch(() => $.ui.toast(`could not open ${label(path)}`))
+        .catch(() => $.ui.toast(`could not open ${entry.label}`))
+    // `o`: the folder of the focused row — a file's parent, a folder itself; a link has none.
+    const folderOfRow = () => {
+      const entry = shown[focused]
+      if (!entry) return
+      if (entry.kind === 'link') return $.ui.toast('Links have no folder')
+      const target = entry.kind === 'folder' ? entry.target : parentOf(entry.target)
+      return open({ ...entry, target, label: target })()
+    }
 
     let inline = null
     // The newest file only, on page 1 only: it is what `openPane` asked rows for. Left out when
@@ -541,19 +553,25 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column">
-        {shown.map((doc, i) => (
+        {shown.map((entry, i) => (
           // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
           // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
-          // Keyed by position: `row:N` is what `go` focuses after a page turn.
-          <Button
-            key={`row:${i}`}
-            plain
-            hotkey={String(i + 1)}
-            autoFocus={i === 0 ? true : undefined}
-            onPress={open(doc.target)}
-          >
-            {`Open ${rowLabel(doc)}`}
-          </Button>
+          // Keyed by position: `row:N` is what `go` focuses after a page turn. The muted tail
+          // says where the thing is, which tells two files of one name apart.
+          <Box key={`line:${i}`} flexDirection="row" columnGap={1}>
+            <Button
+              key={`row:${i}`}
+              plain
+              hotkey={String(i + 1)}
+              autoFocus={i === 0 ? true : undefined}
+              onPress={open(entry)}
+            >
+              {`${MARK[entry.kind]} ${entry.label}`}
+            </Button>
+            <Text color={palette.muted} wrap="truncate-end">
+              {entry.tail}
+            </Text>
+          </Box>
         ))}
         {/* The hint, always drawn, one row: its keys are live Buttons (`j: ↓`), so it cannot
             drift from what works. `openPane` counts this row. */}
@@ -563,6 +581,9 @@ export const register: Register = (on, options) => {
           </Button>
           <Button key={NAV.k} plain dimColor hotkey="k" onPress={up}>
             ↑
+          </Button>
+          <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
+            o: folder
           </Button>
           {pages > 1 ? (
             <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
@@ -576,7 +597,7 @@ export const register: Register = (on, options) => {
             </Button>
           ) : null}
           <Text color={palette.muted} wrap="truncate-end">
-            · Enter or 1–8 opens · Esc closes
+            · Enter or 1–8 opens · f finds · Esc closes
           </Text>
         </Box>
         {inline}

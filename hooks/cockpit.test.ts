@@ -119,7 +119,7 @@ test('the pane lists a written image and draws it inline from its base64', async
   await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
   const pane = await $.ui.mount({ plugin: 'cockpit', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'files' })
   const tree = JSON.stringify(await pane.drawn())
-  expect(tree).toContain('Open shot.png')
+  expect(tree).toContain('▪ shot.png')
   expect(tree).toContain('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
 })
 
@@ -146,11 +146,12 @@ const disk = (
   writes: string[] = [],
   present: (path: string) => boolean = () => true,
   dirs = { root: CWD, cwd: CWD },
+  env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/cfg' },
 ) => {
   const NOW = 1_000_000
   on('session.cwd', async () => ({ value: dirs.cwd }))
   on('session.root', async () => ({ value: dirs.root }))
-  on('env.get', async ($: unknown, e: { name: string }) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('env.get', async ($: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('session.id', async () => ({ value: 'sess-a' }))
   on('clock.now', async () => ({ value: NOW }))
   on('fs.exists', async ($: unknown, e: { path: string }) => {
@@ -173,6 +174,9 @@ const disk = (
   }))
   on('fs.read', async () => ({ value: { base64: PNG } }))
 }
+
+// `openerFor` reads USERPROFILE as the Windows sign; the opener commands are asserted on it.
+const WINDOWS = { CLAUDE_CONFIG_DIR: '/cfg', USERPROFILE: 'C:/Users/me' }
 
 const mountPane = ($: any) =>
   $.ui.mount({ plugin: 'cockpit', surface: 'terminal', component: 'Pane', props: PANE_PROPS, requestId: 'files' })
@@ -200,7 +204,7 @@ test('a Write is collected at its exact path, spaces and all', async ($, on) => 
   // the point is the space survived, whole.
   await $.tool.call({ tool: 'Write', file_path: '/Users/John Smith/report.pdf', content: 'x' })
   expect(asked.some(p => p.replace(/\\/g, '/').endsWith('/Users/John Smith/report.pdf'))).toBe(true)
-  expect(await drawPane($)).toContain('Open report.pdf')
+  expect(await drawPane($)).toContain('▪ report.pdf')
 })
 
 test('a file a command only mentions is not collected; one it produced is', async ($, on) => {
@@ -211,7 +215,7 @@ test('a file a command only mentions is not collected; one it produced is', asyn
   }))
   await $.tool.call({ tool: 'Bash', command: 'make report && git status --short', description: 'build the report' })
   const tree = await drawPane($)
-  expect(tree).toContain('Open report.pdf')
+  expect(tree).toContain('▪ report.pdf')
   expect(tree).not.toContain('README.md')
 })
 
@@ -227,12 +231,12 @@ test('a file written again moves to the top, even once the list is full', async 
   expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(KEEP)
   const pane = await mountPane($)
   const first = JSON.stringify(await pane.drawn())
-  expect(first.indexOf(`Open f${KEEP + 1}.pdf`)).toBeLessThan(first.indexOf('Open f1.pdf'))
-  expect(first.indexOf('Open f1.pdf')).toBeLessThan(first.indexOf(`Open f${KEEP}.pdf`))
+  expect(first.indexOf(`▪ f${KEEP + 1}.pdf`)).toBeLessThan(first.indexOf('▪ f1.pdf'))
+  expect(first.indexOf('▪ f1.pdf')).toBeLessThan(first.indexOf(`▪ f${KEEP}.pdf`))
   for (let p = 1; p < KEEP / PER_PAGE; p++) await pane.press({ key: 'nav:l' })
   const last = JSON.stringify(await pane.drawn())
-  expect(last).toContain('Open f3.pdf')
-  expect(last).not.toContain('Open f2.pdf') // the oldest untouched one is the one dropped
+  expect(last).toContain('▪ f3.pdf')
+  expect(last).not.toContain('▪ f2.pdf') // the oldest untouched one is the one dropped
 })
 
 // ─── pages and keys ──────────────────────────────────────────────────────────────────────────
@@ -243,7 +247,7 @@ const writeMany = async ($: any, on: any, n: number) => {
   for (let i = 1; i <= n; i++) await $.tool.call({ tool: 'Write', file_path: `/work/f${i}.pdf`, content: 'x' })
 }
 
-const labels = (tree: string) => [...tree.matchAll(/"label":"Open (f\d+)\.pdf"/g)].map(m => m[1])
+const labels = (tree: string) => [...tree.matchAll(/"label":"▪ (f\d+)\.pdf"/g)].map(m => m[1])
 
 test('page 1 shows the 8 newest files and a hint saying 1 of N', async ($, on) => {
   await writeMany($, on, 20)
@@ -306,8 +310,8 @@ test('an empty list is rebuilt from the transcript, Bash left out', async ($, on
   // Opening rebuilds (a draw may not write state: the host refuses it).
   await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: true, columns: 144 } })
   const tree = await drawPane($)
-  expect(tree).toContain('Open a.md')
-  expect(tree).toContain('Open shot.png')
+  expect(tree).toContain('▪ a.md')
+  expect(tree).toContain('▪ shot.png')
   expect(tree).not.toContain('b.ts') // source, never listed
   expect(tree).not.toContain('c.pdf') // the Write failed
   expect(tree).not.toContain('README.md') // Bash: not replayed
@@ -321,7 +325,7 @@ test('a drive letter in either case is one file, not two', async ($, on) => {
   on('tool.call', async () => ({ result: { content: [] } }))
   await $.tool.call({ tool: 'Write', file_path: 'e:/work/design/button.md', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: 'E:/work/design/button.md', content: 'y' })
-  expect((await drawPane($)).match(/Open button\.md/g)?.length).toBe(1)
+  expect((await drawPane($)).match(/▪ button\.md/g)?.length).toBe(1)
 })
 
 test('two files with the same name each show their folder', async ($, on) => {
@@ -331,9 +335,10 @@ test('two files with the same name each show their folder', async ($, on) => {
   await $.tool.call({ tool: 'Write', file_path: '/work/b/design/button.md', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: '/work/b/notes.md', content: 'x' })
   const tree = await drawPane($)
-  expect(tree).toContain('Open button.md · contracts')
-  expect(tree).toContain('Open button.md · design')
-  expect(tree).toContain('Open notes.md"') // a unique name stays bare
+  expect(tree.match(/▪ button.md"/g)?.length).toBe(2) // the label stays bare, the tail tells them apart
+  expect(tree).toContain('"contracts"')
+  expect(tree).toContain('"design"')
+  expect(tree).toContain('▪ notes.md"') // a unique name stays bare
 })
 
 // Below 110 columns the terminal seats the pane inline above the prompt, and it gets only the rows
@@ -363,8 +368,8 @@ test('inline, the image preview is left out before any row is', async ($, on) =>
   for (let i = 1; i <= 3; i++) await $.tool.call({ tool: 'Write', file_path: `/work/f${i}.pdf`, content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: '/work/shot.png', content: 'x' })
   const tree = JSON.stringify(await (await mountInline($, 8)).drawn())
-  expect(tree).toContain('Open shot.png')
-  expect(tree).toContain('Open f1.pdf')
+  expect(tree).toContain('▪ shot.png')
+  expect(tree).toContain('▪ f1.pdf')
   expect(tree).not.toContain('"type":"Image"')
 })
 
@@ -405,7 +410,7 @@ test('digits 1-8 are the hotkeys on every page, never letters', async ($, on) =>
   const pane = await mountPane($)
   await pane.press({ key: 'nav:l' })
   const keys = (await pane.findAll({ type: 'Button' })).map((b: any) => b.props?.hotkey).filter(Boolean)
-  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'h', 'l'])
+  expect(keys).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', 'j', 'k', 'o', 'h', 'l'])
 })
 
 test('j and k move the focus row by row, and past the edge turn the page', async ($, on) => {
@@ -465,7 +470,7 @@ test('a newest image that is not a PNG gets its button but no inline drawing', a
   on('tool.call', async () => ({ result: { content: [] } }))
   await $.tool.call({ tool: 'Write', file_path: '/work/shot.jpg', content: 'x' })
   const tree = await drawPane($)
-  expect(tree).toContain('Open shot.jpg')
+  expect(tree).toContain('▪ shot.jpg')
   expect(tree).not.toContain('"Image"')
 })
 
@@ -500,7 +505,7 @@ test('"write 2 files and take a screenshot" counts 3', async ($, on) => {
   await $.tool.call({ tool: 'mcp__playwright__browser_take_screenshot', scale: 'css', filename: '.playwright-mcp/google.png' })
   expect(JSON.parse(status[status.length - 1] ?? '{}').files).toBe(3)
   const tree = await drawPane($)
-  expect(tree.match(/"label":"Open /g)?.length).toBe(3)
+  expect(tree.match(/"label":"▪ /g)?.length).toBe(3)
 })
 
 test('a relative screenshot that exists only under the project root is collected from a subfolder', async ($, on) => {
@@ -508,7 +513,7 @@ test('a relative screenshot that exists only under the project root is collected
   disk(on, {}, [], [], p => p.endsWith('/proj/shot.png'), { root: '/proj', cwd: '/proj/sub' })
   on('tool.call', async () => ({ result: { content: [{ type: 'text', text: '- [Screenshot of viewport](./shot.png)' }] } }))
   await $.tool.call({ tool: 'mcp__playwright__browser_take_screenshot', type: 'png' })
-  expect(await drawPane($)).toContain('Open shot.png')
+  expect(await drawPane($)).toContain('▪ shot.png')
 })
 
 test('a deleted file leaves the count on the next tool call, even one that collected nothing', async ($, on) => {
@@ -717,4 +722,67 @@ test('a folder path alone on a reply line is collected when it is a directory', 
   on('classic.MessageDisplay', async () => ({})) // the bottom of the chain: no settings hook beneath
   await $.classic.MessageDisplay({ turn_id: 't', message_id: 'm4', index: 0, final: true, delta: 'Worktree:\n/work/wt/feat\n' })
   expect(list().map(e => `${e.kind}:${e.target}`)).toEqual(['folder:/work/wt/feat'])
+})
+
+// ─── the rows: a marker, a tail, and `o` for the folder ──────────────────────────────────────
+
+test('rows carry a kind marker and a muted tail', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'Published https://claude.ai/artifact/a1' }] } }))
+  await $.tool.call({ tool: 'Write', file_path: '/work/out/report.pdf', content: 'x' })
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
+  const drawn = await drawPane($)
+  expect(drawn).toContain('↗ claude.ai/artifact/a1')
+  expect(drawn).toContain('▪ report.pdf')
+  expect(drawn).toContain('"out"')
+})
+
+test('the empty state names the hub, not files', async ($, on) => {
+  disk(on)
+  expect(await drawPane($)).toContain('Nothing to open yet this session.')
+})
+
+test('o on a file opens its folder; on a folder, itself; on a link, a toast', async ($, on) => {
+  const ran: string[][] = []
+  const toasts: string[] = []
+  disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
+  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+    ran.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+  })
+  on('ui.toast', async ($: unknown, e: { text: string }) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.close', async () => ({ value: undefined }))
+  on('tool.call', async ($, e) =>
+    e.tool === 'Artifact' ? { result: { content: [{ type: 'text', text: 'https://claude.ai/artifact/a1' }] } } : { result: { stdout: '' } },
+  )
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
+  await $.tool.call({ tool: 'Bash', command: 'mkdir E:/Work/out' })
+  await $.tool.call({ tool: 'Write', file_path: 'E:/Work/out/report.pdf', content: 'x' })
+  const pane = await mountPane($)
+  await pane.press({ key: 'nav:o' }) // row 0 = report.pdf
+  expect(ran[0]).toEqual(['cmd', '/c', 'start', '', 'E:\\Work\\out'])
+  await pane.press({ key: 'nav:j' })
+  await pane.press({ key: 'nav:o' }) // row 1 = the folder
+  expect(ran[1]).toEqual(['cmd', '/c', 'start', '', 'E:\\Work\\out'])
+  await pane.press({ key: 'nav:j' })
+  await pane.press({ key: 'nav:o' }) // row 2 = the link
+  expect(toasts).toEqual(['Links have no folder'])
+  expect(ran.length).toBe(2)
+})
+
+test('a link opens through the URL handler on Windows, not cmd start', async ($, on) => {
+  const ran: string[][] = []
+  disk(on, {}, [], [], () => true, { root: CWD, cwd: CWD }, WINDOWS)
+  on('process.run', async ($: unknown, e: { argv: string[] }) => {
+    ran.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
+  })
+  on('ui.close', async () => ({ value: undefined }))
+  on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'https://claude.ai/artifact/a1?x=1&y=2' }] } }))
+  await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
+  await (await mountPane($)).press({ key: 'row:0' })
+  expect(ran[0]).toEqual(['rundll32', 'url.dll,FileProtocolHandler', 'https://claude.ai/artifact/a1?x=1&y=2'])
 })
