@@ -682,7 +682,9 @@ export const register: Register = (on, options) => {
           ) : null}
           {pages > 1 ? (
             <Box flexShrink={0}>
-              <Text>{`${page + 1}/${pages}`}</Text>
+              {/* Which entries, not only which page: a wrap from page 1 to a shorter last page read as
+                  an entry lost (Julian 2026-10-04, 15 entries: 8 then 7). */}
+              <Text bold>{`${page * perPage + 1}–${page * perPage + shown.length} of ${pool.length} · ${page + 1}/${pages}`}</Text>
             </Box>
           ) : null}
           {pages > 1 ? (

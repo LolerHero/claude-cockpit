@@ -425,12 +425,12 @@ test('j and k move the focus row by row, and past the edge turn the page', async
   const pane = await mountPane($)
   const shows = async () => JSON.stringify(await pane.drawn())
   for (let i = 1; i < PER_PAGE; i++) await pane.press({ key: 'nav:j' }) // row 1 → row 8
-  expect(await shows()).toContain('1/2')
+  expect(await shows()).toContain('1–8 of 10 · 1/2')
   await pane.press({ key: 'nav:k' }) // row 7
   await pane.press({ key: 'nav:j' }) // row 8
   expect(await shows()).toContain('1/2')
   await pane.press({ key: 'nav:j' }) // past the last row: page 2, first row
-  expect(await shows()).toContain('2/2')
+  expect(await shows()).toContain('9–10 of 10 · 2/2') // the range says which entries, not only the page
   await pane.press({ key: 'nav:j' }) // row 2 of page 2, the last
   await pane.press({ key: 'nav:j' }) // the end of the list: round to page 1, row 1
   expect(await shows()).toContain('1/2')
@@ -815,7 +815,7 @@ test('a link opens through the URL handler on Windows, not cmd start', async ($,
 const cursorOf = async (pane: any) => {
   const buttons = await pane.findAll({ type: 'Button' })
   const row = buttons.find((b: any) => b.props?.autoFocus)?.props?.key ?? 'row:0'
-  const pages = /"(\d+)\/\d+"/.exec(JSON.stringify(await pane.drawn()))
+  const pages = / · (\d+)\/\d+"/.exec(JSON.stringify(await pane.drawn()))
   return { page: pages ? Number(pages[1]) - 1 : 0, focused: Number(row.split(':')[1]) }
 }
 
