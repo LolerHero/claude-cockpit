@@ -21,14 +21,27 @@ import type { Doc } from '../types'
 import { paletteOf } from '../palettes.js'
 
 const PANE = 'files'
-const KEEP = 10 // with the 10-row image preview the dialog stays ~22 rows, inside a normal window
+export const KEEP = 32
+// One page is what the dialog asks rows for, whatever the list holds: a dialog taller than the
+// terminal pushed every redraw (spinner ticks) into scrollback, stacking copies over the chat.
+export const PER_PAGE = 8
 const INLINE_MAX_BYTES = 400_000 // a tree carries bounded text; a big PNG gets the button alone
 export const IMAGE_ROWS = 10 // the inline preview's height in cells; `openPane` asks room for it
+// 8 rows + hint + 10-row image and its gap = 20 rows: inside a normal window.
 
 // The key reaches the pane through `/files`, not a Button `action`: ~/.claude/keybindings.json
 // binds `ctrl+x f` to `command:files` in the Chat context (setup.mjs writes that binding).
 
 const files = atom({ plugin: 'cockpit', key: 'files' } as const, [])
+
+// Trimmed on read, not only on the next write: a session that stored more under an older, larger
+// KEEP showed all of it until a new file came in.
+const stored = async ($: EngineInterface) => (await read($, files)).slice(-KEEP)
+
+// Which page the pane shows and which row on it holds the focus ring. Module-level: a reload
+// starts on page 1, which is where a reopened pane starts anyway.
+let page = 0
+let focused = 0
 
 // Module-level: a reload starts at 0 until the next draw measures again; the status line then
 // falls back to its own width sources.
@@ -51,7 +64,7 @@ const publish = async ($: EngineInterface) => {
     const dir = await configDir($)
     const id = await $.session.id()
     if (!dir || !/^[\w-]+$/.test(id)) return
-    const docs = await read($, files)
+    const docs = await stored($)
     await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: docs.length, columns }))
   } catch {
     // the status line falls back to its own width sources and omits the count
@@ -91,12 +104,18 @@ const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
 // PNG only: the terminal's Image takes PNG data, and anything else refuses the WHOLE pane.
 const isPng = (path: string) => /\.png$/i.test(path)
 
-// A hotkey is ONE digit or ONE lowercase letter, so there is no two-press scheme to build:
-// 1–9 then a–z is 35 single-press slots, more than KEEP will ever hold.
-export const hotkeyFor = (i: number): string | undefined => {
-  if (i < 9) return String(i + 1)
-  const letter = i - 9
-  return letter < 26 ? String.fromCharCode(97 + letter) : undefined
+// A Button hotkey is ONE digit or ONE lowercase letter (the engine refuses anything else), and
+// it is the only key a pane can bind: the arrows and Tab belong to the engine, which walks the
+// focus ring with them. So rows take 1–8 and the navigation takes h/j/k/l, as Buttons of its own.
+const NAV = { j: 'nav:j', k: 'nav:k', h: 'nav:h', l: 'nav:l' } as const
+const isNav = (key: string | undefined) => !!key?.startsWith('nav:')
+
+// Turns to `to` (clamped by the caller), redraws, and puts the ring on row `row` of it.
+const go = async ($: EngineInterface, to: number, row: number) => {
+  page = to
+  focused = row
+  $.ui.invalidate('ui.render')
+  await $.ui.focus({ requestId: PANE, key: `row:${row}` }).catch(() => null)
 }
 
 // Top level, not nested in `register`: the validator only traces `$` into a function declared at
@@ -129,10 +148,13 @@ const collect = async ($: EngineInterface, paths: string[], since?: number) => {
 // `rows` is what makes the arrows walk the list: a dialog tall enough to show whole has nothing
 // to scroll, and while it has, the engine spends the arrows on scrolling (measured 2026-10-03:
 // opened a third tall, a 20-row image box made the list scroll and the arrows dead).
+// One page at most, never the whole list: see PER_PAGE.
 const openPane = async ($: EngineInterface) => {
-  const list = await read($, files)
+  const list = await stored($)
   const newest = list[list.length - 1]
-  const rows = Math.max(1, list.length) + 1 + (newest && isPng(newest.path) ? IMAGE_ROWS + 1 : 0)
+  page = 0
+  focused = 0
+  const rows = Math.min(PER_PAGE, Math.max(1, list.length)) + 1 + (newest && isPng(newest.path) ? IMAGE_ROWS + 1 : 0)
   await $.ui.open({ id: PANE, title: 'Files', focus: true, closeOnEscape: true, holdToasts: true, rows })
 }
 
@@ -201,9 +223,18 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // The arrows and Tab walk every Button, the h/j/k/l ones too; the ring stays on the rows, so
+  // an arrow past the page's edge stops there (j/k turn the page instead). Tracks the row too.
+  on('ui.focus', { requestId: PANE }, async ($, e, next) => {
+    if (isNav(e.element)) return {}
+    const row = /^row:(\d+)$/.exec(e.element ?? '')
+    if (row) focused = Number(row[1])
+    return next(e)
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const all = await read($, files)
+    const all = await stored($)
 
     // Only what is still on disk: a file can be deleted or moved after it was collected, and a
     // button that opens nothing reads as the mod being broken rather than as a missing file.
@@ -221,6 +252,25 @@ export const register: Register = (on, options) => {
     }
 
     const newest = list[list.length - 1]
+    const pages = Math.ceil(list.length / PER_PAGE)
+    page = Math.min(page, pages - 1) // a file deleted since can shorten the list under us
+    const shown = list
+      .slice()
+      .reverse()
+      .slice(page * PER_PAGE, (page + 1) * PER_PAGE)
+    const last = shown.length - 1
+
+    // j past the last row turns to the next page's first; k before the first, to the previous
+    // page's last. At the list's two ends they stay put.
+    const down = () =>
+      focused < last ? go($, page, focused + 1) : page < pages - 1 ? go($, page + 1, 0) : undefined
+    const up = () =>
+      focused > 0
+        ? go($, page, focused - 1)
+        : page > 0
+          ? go($, page - 1, PER_PAGE - 1)
+          : undefined
+    const turn = (to: number) => () => (to >= 0 && to < pages ? go($, to, 0) : undefined)
 
     const open = (path: string) => () => {
       void openerFor($, path)
@@ -232,7 +282,8 @@ export const register: Register = (on, options) => {
     }
 
     let inline = null
-    if (e.surface === 'terminal' && isPng(newest.path)) {
+    // The newest file only, on page 1 only: it is what `openPane` asked rows for.
+    if (page === 0 && e.surface === 'terminal' && isPng(newest.path)) {
       // Resolved here, not above: `Image` exists only in the terminal's element table, and
       // narrowing on e.surface is what hands it over. A module has no element globals.
       const { Image } = $.ui.resolve(e)
@@ -258,23 +309,44 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column">
-        {list
-          .slice()
-          .reverse()
-          .map((doc, i) => (
-            // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
-            // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
-            <Button
-              key={doc.path}
-              plain
-              hotkey={hotkeyFor(i)}
-              autoFocus={i === 0 ? true : undefined}
-              onPress={open(doc.path)}
-            >
-              {`Open ${doc.label}`}
+        {shown.map((doc, i) => (
+          // `autoFocus?: true` is a literal-true type, so `false` is not "off", it is an
+          // invalid prop — and one invalid prop refuses the WHOLE tree, not just that element.
+          // Keyed by position: `row:N` is what `go` focuses after a page turn.
+          <Button
+            key={`row:${i}`}
+            plain
+            hotkey={String(i + 1)}
+            autoFocus={i === 0 ? true : undefined}
+            onPress={open(doc.path)}
+          >
+            {`Open ${doc.label}`}
+          </Button>
+        ))}
+        {/* The hint, always drawn, one row: its keys are live Buttons (`j: ↓`), so it cannot
+            drift from what works. `openPane` counts this row. */}
+        <Box flexDirection="row" columnGap={1}>
+          <Button key={NAV.j} plain dimColor hotkey="j" onPress={down}>
+            ↓
+          </Button>
+          <Button key={NAV.k} plain dimColor hotkey="k" onPress={up}>
+            ↑
+          </Button>
+          {pages > 1 ? (
+            <Button key={NAV.h} plain dimColor hotkey="h" onPress={turn(page - 1)}>
+              ‹
             </Button>
-          ))}
-        <Text color={palette.muted}>↑↓ or Tab move · Enter or its key opens · Esc closes</Text>
+          ) : null}
+          {pages > 1 ? <Text color={palette.muted}>{`${page + 1}/${pages}`}</Text> : null}
+          {pages > 1 ? (
+            <Button key={NAV.l} plain dimColor hotkey="l" onPress={turn(page + 1)}>
+              ›
+            </Button>
+          ) : null}
+          <Text color={palette.muted} wrap="truncate-end">
+            · Enter or 1–8 opens · Esc closes
+          </Text>
+        </Box>
         {inline}
       </Box>
     )

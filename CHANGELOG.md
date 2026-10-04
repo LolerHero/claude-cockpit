@@ -3,6 +3,13 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## Unreleased
+
+- `/files` pane: keeps 32 files, eight to a page. `h`/`l` turn the page, `j`/`k` move the selection and
+  cross pages at the edges, `1`–`8` open a row (letters are no longer row keys). The hint line
+  is always drawn, and the pane asks at most one page of rows (20 with a PNG preview), so it never
+  outgrows the terminal. A stored list longer than 32 is trimmed when read.
+
 ## v0.1.0 — 2026-10-04
 
 Tested against Claude Code 2.1.288.
