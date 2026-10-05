@@ -3,6 +3,19 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.7 — 2026-10-05
+
+Tested against Claude Code 2.1.289.
+
+- Installable through `/plugin`: the repository is its own marketplace.
+  `/plugin install cockpit --marketplace LolerHero/claude-cockpit`, or from a shell
+  `claude plugin marketplace add LolerHero/claude-cockpit` and `claude plugin install cockpit@cockpit`.
+- A plugin cannot set the status line or keybindings, so `setup.mjs` stays for those. Run from the
+  marketplace's copy (`~/.claude/plugins/marketplaces/cockpit/setup.mjs`) it wires only those two
+  and keys the options as `cockpit@cockpit`; it no longer adds a plugin dir there, which would load
+  the plugin twice.
+- The status line reads the options of an installed plugin (`cockpit@<marketplace>`) as well.
+
 ## v0.2.6 — 2026-10-05
 
 Tested against Claude Code 2.1.289.
