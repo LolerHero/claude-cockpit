@@ -390,6 +390,18 @@ const mountInline = ($: any, bodyRows: number) =>
     requestId: 'files',
   })
 
+test('inline and filtering, the one hint row leads with Tab, then the walk, then bare o and f', async ($, on) => {
+  await writeMany($, on, 20)
+  const pane = await mountInline($, 5)
+  await pane.press({ key: 'nav:f' })
+  const tree = JSON.stringify(await pane.drawn())
+  expect(tree.indexOf('Tab: matches')).toBeLessThan(tree.indexOf('nav:j'))
+  expect(tree.indexOf('nav:j')).toBeLessThan(tree.indexOf('nav:o'))
+  expect(tree).not.toContain('"label":"folder"')
+  expect(tree).not.toContain('"label":"field"')
+  expect(tree).toContain('Esc back')
+})
+
 test('inline with few rows, a page is as long as the rows granted, the hint still drawn', async ($, on) => {
   await writeMany($, on, 20)
   const tree = JSON.stringify(await (await mountInline($, 5)).drawn())
@@ -1008,6 +1020,11 @@ test('while filtering, the hint names Tab to the matches and f back to the field
   expect(drawn).toContain('Tab: matches')
   expect(drawn).toContain('"hotkey":"f"') // f returns from the matches to the field
   expect(drawn).toContain('"submitLabel":"open"') // Enter opens; not the engine default `submit`
+  // Julian 2026-10-05: while filtering o and f are bare keys (the field explains itself), and the
+  // row leads with Tab, then the walk.
+  expect(drawn).not.toContain('"label":"folder"')
+  expect(drawn).not.toContain('"label":"field"')
+  expect(drawn.indexOf('Tab: matches')).toBeLessThan(drawn.indexOf('nav:j'))
   expect(drawn).toContain('▪ a.md') // an empty query is the whole list
 })
 

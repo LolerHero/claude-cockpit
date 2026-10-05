@@ -769,12 +769,13 @@ export const register: Register = (on, options) => {
                 ]
               : []),
           ]
+          // While filtering, o and f are bare keys (Julian 2026-10-05: the field explains itself); f is
+          // the way back from the matches to the field, text kept (only Shift+Tab came back before,
+          // and a missing f fell through to the prompt).
           const acts = [
             <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
-              folder
+              {filtering ? '' : 'folder'}
             </Button>,
-            // While filtering, f is the way back from the matches to the field, text kept (Julian
-            // 2026-10-05: only Shift+Tab came back, and a missing f fell through to the prompt).
             <Button
               key={NAV.f}
               plain
@@ -782,27 +783,35 @@ export const register: Register = (on, options) => {
               hotkey="f"
               onPress={filtering ? () => void $.ui.focus({ requestId: PANE, key: 'q' }).catch(() => null) : startFilter}
             >
-              {filtering ? 'field' : 'find'}
+              {filtering ? '' : 'find'}
             </Button>,
           ]
+          // Filtering, the row leads with the way into the matches, then how to walk them.
+          const tab = filtering
+            ? [
+                <Box key="tab" flexShrink={0}>
+                  <Text>Tab: matches</Text>
+                </Box>,
+              ]
+            : []
           return hintRows === HINT_ROWS ? (
             <>
               <Box flexDirection="row" columnGap={1}>
+                {tab}
                 {walk}
               </Box>
               <Box flexDirection="row" columnGap={1}>
                 {acts}
                 <Text wrap="truncate-end">
-                  {filtering ? '· Tab: matches · Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
+                  {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
                 </Text>
               </Box>
             </>
           ) : (
             <Box flexDirection="row" columnGap={1}>
-              {acts}
-              {walk}
               {/* Short, and cut at the edge rather than wrapped: this row has no second line to spill into. */}
-              <Text wrap="truncate-end">{filtering ? '· Tab: matches · Esc back' : '· Enter opens · Esc closes'}</Text>
+              {filtering ? [...tab, ...walk, ...acts] : [...acts, ...walk]}
+              <Text wrap="truncate-end">{filtering ? '· Esc back' : '· Enter opens · Esc closes'}</Text>
             </Box>
           )
         })()}
