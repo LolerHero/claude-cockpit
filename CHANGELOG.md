@@ -3,6 +3,19 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.6 — 2026-10-05
+
+Tested against Claude Code 2.1.289.
+
+- In the find field, `Tab` moves into the matches and `f` brings you back to the field with your
+  text kept. Before, only `Shift+Tab` came back, and `f` fell through to the prompt.
+- While filtering, the hint leads with `Tab: matches`, then the walk; `o` and `f` are bare keys.
+  The one-row hint of a narrow terminal now carries a short text too, cut at the edge.
+- The field's Enter label reads `open` (it opens the top match) instead of Claude Code's default
+  `submit`, and the placeholder is short enough to keep it on the field's row.
+- README: GIFs per section, a narrow-terminal GIF, and the filter described as it matches (the
+  typed characters in order, gaps allowed).
+
 ## v0.2.5 — 2026-10-05
 
 Tested against Claude Code 2.1.289.
