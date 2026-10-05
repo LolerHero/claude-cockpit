@@ -6,6 +6,11 @@
     "name": "Julian Hansen"
   },
   "license": "MIT",
+  "homepage": "https://github.com/LolerHero/claude-cockpit",
+  "repository": "https://github.com/LolerHero/claude-cockpit",
+  "documentationUrl": "https://github.com/LolerHero/claude-cockpit#readme",
+  "supportUrl": "https://github.com/LolerHero/claude-cockpit/issues",
+  "privacyPolicyUrl": "https://github.com/LolerHero/claude-cockpit/blob/main/PRIVACY.md",
   "types": "./types/index.d.ts",
   "userConfig": {
     "palette": {
