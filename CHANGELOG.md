@@ -3,6 +3,19 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.5 — 2026-10-05
+
+Tested against Claude Code 2.1.289.
+
+- A file Claude edits joins the pane, as a file it writes always did.
+- A file Claude names in a reply joins it too: an absolute path in backticks anywhere on a line,
+  or a path alone on its line, bold or not. Source files and bare paths in prose still stay out.
+- One file is one row. A rebuild from the transcript listed a file once per mention, and
+  `E:\x\a.md` and `e:/X/A.md` were two rows; on drive-letter paths case and separator no
+  longer count.
+- The status-line count is every row the pane holds: a link or folder behind a `0` was one no
+  one would open.
+
 ## v0.2.4 — 2026-10-04
 
 Tested against Claude Code 2.1.289.
