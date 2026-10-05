@@ -40,10 +40,13 @@ const readJson = path => {
 
 /** The plugin's options as the config menu stores them, under `pluginConfigs[<key>].options`.
  *  Loaded from a folder the key is `cockpit@inline` (measured on 2.1.288, 2026-10-04), so that
- *  comes first; plain `cockpit` is the key a marketplace install would use. Defaults for anything odd. */
+ *  comes first; installed through `/plugin` it is `cockpit@<marketplace>` (the settings reference:
+ *  options live under `plugin-name@marketplace-name`); plain `cockpit` last. Defaults for anything odd. */
 function options() {
   const s = readJson(join(configDir(), 'settings.json'))
-  const c = s?.pluginConfigs?.['cockpit@inline']?.options ?? s?.pluginConfigs?.cockpit?.options ?? {}
+  const all = s?.pluginConfigs ?? {}
+  const installed = Object.keys(all).find(k => k.startsWith('cockpit@') && k !== 'cockpit@inline')
+  const c = all['cockpit@inline']?.options ?? (installed && all[installed]?.options) ?? all.cockpit?.options ?? {}
   return { palette: paletteOf(c.palette), glyphs: c.glyphs === 'plain' ? 'plain' : 'nerd' }
 }
 

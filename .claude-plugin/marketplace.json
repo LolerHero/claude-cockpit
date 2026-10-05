@@ -1,0 +1,14 @@
+{
+  "name": "cockpit",
+  "description": "claude-cockpit: a denser status line and a pane of the files, links and folders your session produced.",
+  "owner": { "name": "Julian Hansen" },
+  "plugins": [
+    {
+      "name": "cockpit",
+      "source": "./",
+      "description": "A denser Claude Code status line and a pane of the files, links and folders this session produced, with a fuzzy filter and a palette picker.",
+      "homepage": "https://github.com/LolerHero/claude-cockpit",
+      "keywords": ["status-line", "files", "pane", "mod", "productivity"]
+    }
+  ]
+}

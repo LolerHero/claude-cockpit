@@ -3,8 +3,9 @@
 //   node setup.mjs [--palette <name>] [--glyphs nerd|plain] [--dry-run] [--force]
 //
 // 1. settings.json → statusLine runs statusline/statusline.mjs with this Node
-// 2. settings.json → env.CLAUDE_CODE_PLUGIN_DIRS gains this folder (so the mod loads everywhere)
-// 3. settings.json → pluginConfigs["cockpit@inline"].options.{palette,glyphs} when the flags are given
+// 2. settings.json → env.CLAUDE_CODE_PLUGIN_DIRS gains this folder (so the mod loads everywhere),
+//    unless this folder is a marketplace clone: installed through /plugin, the mod loads already
+// 3. settings.json → pluginConfigs["cockpit@inline" | "cockpit@<marketplace>"].options when flags are given
 // 4. keybindings.json → ctrl+x f opens /files, unless the chord is taken
 // Every change is printed as `changed: …`; everything left as is, `kept: …`. settings.json is
 // backed up before the first write. The config dir is CLAUDE_CONFIG_DIR or ~/.claude.
@@ -20,15 +21,19 @@ import { PALETTES } from './palettes.js'
 const GLYPHS = ['nerd', 'plain']
 const CHORD = 'ctrl+x f'
 const COMMAND = 'command:files'
-// Where the config menu stores this plugin's options when it loads from a folder
-// (CLAUDE_CODE_PLUGIN_DIRS): `<name>@inline`, measured on 2.1.288. Setup writes the same key.
-const KEY = 'cockpit@inline'
+// Where the config menu stores this plugin's options: loaded from a folder (CLAUDE_CODE_PLUGIN_DIRS)
+// `<name>@inline`, measured on 2.1.288; installed through `/plugin`, `<name>@<marketplace>`.
+// A marketplace's clone sits at `<config>/plugins/marketplaces/<marketplace>/`, and setup run from
+// there is an installed plugin: the clone is also the stable path for the status line.
+const MARKETPLACE = /\/plugins\/marketplaces\/([^/]+)\/?$/
 
 /** Pure: the settings and keybindings after setup, plus the lines to print. Throws on a bad flag. */
 export function plan({ settings, keybindings, repo, node, flags }) {
   const s = structuredClone(settings ?? {})
   const k = structuredClone(keybindings ?? { bindings: [] })
   const lines = []
+  const market = MARKETPLACE.exec(repo)?.[1]
+  const KEY = market ? `cockpit@${market}` : 'cockpit@inline'
 
   if (flags.palette !== undefined && !Object.hasOwn(PALETTES, flags.palette)) {
     throw new Error(`--palette must be one of ${Object.keys(PALETTES).join(', ')}`)
@@ -49,11 +54,12 @@ export function plan({ settings, keybindings, repo, node, flags }) {
     lines.push(`changed: statusLine → ${command}`)
   }
 
-  // 2. plugin dir
-  s.env ??= {}
-  const dirs = (s.env.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(delimiter).filter(Boolean)
-  if (dirs.includes(repo)) lines.push('kept: env.CLAUDE_CODE_PLUGIN_DIRS already lists this folder')
+  // 2. plugin dir — not for a plugin installed through /plugin: it loads already, a second load doubles it
+  const dirs = (s.env?.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(delimiter).filter(Boolean)
+  if (market) lines.push(`kept: no plugin dir, installed through /plugin (cockpit@${market}) it loads already`)
+  else if (dirs.includes(repo)) lines.push('kept: env.CLAUDE_CODE_PLUGIN_DIRS already lists this folder')
   else {
+    s.env ??= {}
     s.env.CLAUDE_CODE_PLUGIN_DIRS = [...dirs, repo].join(delimiter)
     lines.push(`changed: env.CLAUDE_CODE_PLUGIN_DIRS → ${s.env.CLAUDE_CODE_PLUGIN_DIRS}`)
   }

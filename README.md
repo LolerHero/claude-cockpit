@@ -53,18 +53,29 @@ A file or folder that vanished drops off the list; a link is never checked. The 
 
 ## Install
 
+Inside Claude Code:
+
 ```
-git clone https://github.com/LolerHero/claude-cockpit
-cd claude-cockpit
-node setup.mjs            # add --palette tokyo-night, --glyphs plain, --dry-run, --force
+/plugin install cockpit --marketplace LolerHero/claude-cockpit
 ```
 
-Then restart `claude`. To stay on a release tested against your Claude Code build, clone its tag instead (`git clone --branch v0.1.0 …`); [CHANGELOG.md](CHANGELOG.md) names the build each release was tested on.
+or from your shell: `claude plugin marketplace add LolerHero/claude-cockpit`, then `claude plugin install cockpit@cockpit`. That installs the Files pane and `/files`.
+
+A plugin cannot set your status line or your keybindings, so one more step wires those up, from the copy the install made:
+
+```
+node ~/.claude/plugins/marketplaces/cockpit/setup.mjs                      # macOS, Linux
+node "$env:USERPROFILE\.claude\plugins\marketplaces\cockpit\setup.mjs"     # Windows PowerShell
+```
+
+Add `--palette tokyo-night`, `--glyphs plain`, `--dry-run` or `--force` as needed, then restart `claude`. The status line runs from that copy, which `/plugin` updates in place, so updates reach it too.
+
+**From source instead:** `git clone https://github.com/LolerHero/claude-cockpit`, then `node setup.mjs` in the clone; setup then also loads the plugin from that folder. To stay on a release tested against your Claude Code build, clone its tag (`git clone --branch v0.2.6 …`); [CHANGELOG.md](CHANGELOG.md) names the build each release was tested on.
 
 What setup changes, in `~/.claude` (or `CLAUDE_CONFIG_DIR`):
 
 - `settings.json` → `statusLine` runs `statusline/statusline.mjs`. A status line you already have is kept unless you pass `--force`.
-- `settings.json` → `env.CLAUDE_CODE_PLUGIN_DIRS` gains this folder, so the plugin loads in every session.
+- `settings.json` → `env.CLAUDE_CODE_PLUGIN_DIRS` gains the folder, so the plugin loads in every session. Only from a source clone: installed through `/plugin` it loads already.
 - `keybindings.json` → `ctrl+x f` opens `/files`, unless that chord is already bound to something else.
 
 `settings.json` is backed up next to itself before the first write. `--dry-run` prints the changes and writes nothing.

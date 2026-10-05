@@ -19,6 +19,21 @@ const OTHER = WIN ? 'C:/other/mod' : '/opt/other/mod'
 const NODE = 'E:/nvm4w/nodejs/node.exe'
 const base = () => ({ settings: structuredClone(FIXTURE), keybindings: null, repo: REPO, node: NODE, flags: {} })
 
+// Installed through `/plugin` (a marketplace), the plugin already loads: setup only adds the status
+// line and the keybinding, and the options go under `cockpit@<marketplace>`, the key the config menu
+// uses for an installed plugin. The marketplace clone is the stable path: it moves on update, the
+// versioned cache does not stay.
+test('run from a marketplace clone, setup adds no plugin dir and keys the options by the marketplace', () => {
+  const home = WIN ? 'C:/Users/me/.claude' : '/home/me/.claude'
+  const repo = `${home}/plugins/marketplaces/cockpit`
+  const { settings, lines } = plan({ ...base(), repo, flags: { palette: 'ansi' } })
+  assert.deepEqual(settings.statusLine, { type: 'command', command: `"${NODE}" "${repo}/statusline/statusline.mjs"` })
+  assert.equal(settings.env?.CLAUDE_CODE_PLUGIN_DIRS, undefined)
+  assert.ok(lines.some(l => l.includes('installed through /plugin')))
+  assert.deepEqual(settings.pluginConfigs['cockpit@cockpit'], { options: { palette: 'ansi' } })
+  assert.equal(settings.pluginConfigs['cockpit@inline'], undefined)
+})
+
 test('a fresh settings file gets the status line, the plugin dir and the keybinding', () => {
   const { settings, keybindings, lines } = plan(base())
   assert.deepEqual(settings.statusLine, { type: 'command', command: `"${NODE}" "${REPO}/statusline/statusline.mjs"` })

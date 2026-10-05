@@ -107,6 +107,16 @@ test('with both keys stored, the one the config menu writes for a folder plugin 
   assert.match(r.stdout, /\x1b\[38;2;169;177;214m/) // tokyo-night subtle, not ansi
 })
 
+test('installed through /plugin, the options under cockpit@<marketplace> are read', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cockpit-'))
+  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ pluginConfigs: { 'cockpit@cockpit': { options: { palette: 'tokyo-night' } } } }))
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: dir }
+  delete env.WEZTERM_PANE
+  const p = { ...PAYLOAD, cwd: dir, workspace: { current_dir: dir, project_dir: dir } }
+  const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(p), env, cwd: dir, encoding: 'utf8' })
+  assert.match(r.stdout, /\x1b\[38;2;169;177;214m/) // tokyo-night subtle
+})
+
 test('a missing or unparsable settings.json still draws', () => {
   assert.match(run({ columns: 144, settings: 'missing' }), /\x1b\[38;2;144;140;170m/)
   assert.match(run({ columns: 144, settings: 'garbage' }), /\x1b\[38;2;144;140;170m/)
