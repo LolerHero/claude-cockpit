@@ -2,7 +2,7 @@
 
 A denser Claude Code status line and a pane of the files, links and folders your session produced, with a fuzzy filter.
 
-![A Claude Code session in WezTerm on Windows: Claude writes two files, a folder and a link, the status-line count climbs to 6, then /files opens the pane, j and k walk the rows, and f with "lau" filters to launch-plan.md](docs/screenshots/demo.gif)
+![A Claude Code session in WezTerm on Windows: Claude writes two files, a folder and a link and the status-line count climbs; ctrl+x f opens the pane, j and k walk the rows, and the find field filters with Tab into the matches and f back to the field](docs/screenshots/demo.gif)
 
 ## What you get
 
@@ -12,7 +12,7 @@ The status line, one row:
 Opus 5.5 │ Coding │ main* +12 -3 │ ▪▪▪▪▪                  3  ·  1h 20m
 ```
 
-![The status line while Claude works: model, directory, branch with churn and the context bar; the count beside the file icon climbs from 0 to 6 as the reply writes files, makes folders and names a link](docs/screenshots/demo-status.gif)
+![The status line while Claude works: model, directory, branch with churn and the context bar; the count beside the file icon climbs as the reply writes files and names a folder and a link](docs/screenshots/demo-status.gif)
 
 - `Opus 5.5` is the model.
 - `Coding` is the directory the session runs in.
@@ -26,11 +26,15 @@ When the terminal is too narrow, segments drop in this order: model, directory, 
 
 The pane opens with `/files` or `ctrl+x f`. It is the session's hub: the files, links and folders this session produced, newest first, eight to a page, the newest 48 kept. Each row starts with its kind (`▪` file, `↗` link, `▸` folder) and ends with a muted tail that says where it is: the file's folder, the link's host and port, the folder's parent.
 
-![/files opens the pane docked beside the session; j and k walk the rows, each marked as a link, file or folder with its location in the muted tail](docs/screenshots/demo-pane.gif)
+![ctrl+x f opens the pane docked beside the session; j and k walk the rows, each marked as a link, file or folder with its location in the muted tail](docs/screenshots/demo-pane.gif)
 
-Keys: Enter or the row's digit (`1`–`8`) opens the row; `j`/`k` move the selection and wrap around (`k` on the first row reaches the last entry of the last page, `j` on the last entry the first row); `h`/`l` turn the page and wrap likewise; `o` opens the folder the row sits in (a folder opens itself; a link has none); `f` finds: a field appears, the list narrows as you type (fuzzy, over the name and the tail, in any order of characters), Enter opens the top match, Tab moves into the matches (walk them as above) and `f` brings you back to the field with your text kept, Esc returns to the list; Esc in the list closes the pane. The arrows and Tab also walk the selection, since a pane cannot bind them. A thing that opened takes you to another app and the pane closes behind it. When the newest file is a PNG, it is also drawn in the pane, in terminals that can show pictures (kitty and Ghostty); elsewhere a line says so. The preview hides while you filter.
+On a terminal narrower than 110 columns the pane sits inline above the prompt and a page is as long as the rows it is given; the hint shrinks to one row:
 
-![The find field: f opens it, typing "lau" narrows the list to launch-plan.md and the link, Esc returns to the full list](docs/screenshots/demo-find.gif)
+![The same session in a narrow window: the pane opens inline above the prompt, one entry a page, and the hint is a single row of keys](docs/screenshots/demo-narrow.gif)
+
+Keys: Enter or the row's digit (`1`–`8`) opens the row; `j`/`k` move the selection and wrap around (`k` on the first row reaches the last entry of the last page, `j` on the last entry the first row); `h`/`l` turn the page and wrap likewise; `o` opens the folder the row sits in (a folder opens itself; a link has none); `f` finds: a field appears, the list narrows as you type (fuzzy over the name and the tail: the typed characters in order, gaps allowed), Enter opens the top match, Tab moves into the matches (walk them as above) and `f` brings you back to the field with your text kept, Esc returns to the list; Esc in the list closes the pane. The arrows and Tab also walk the selection, since a pane cannot bind them. A thing that opened takes you to another app and the pane closes behind it. When the newest file is a PNG, it is also drawn in the pane, in terminals that can show pictures (kitty and Ghostty); elsewhere a line says so. The preview hides while you filter.
+
+![The find field: f opens it and typing "lau" narrows the list; Tab moves into the matches and j walks them; f returns to the field, the text is changed to "rep", and Esc goes back to the full list](docs/screenshots/demo-find.gif)
 
 What counts:
 
