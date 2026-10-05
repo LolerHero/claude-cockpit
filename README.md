@@ -90,6 +90,18 @@ The palette, the glyphs and the open words are options of the `cockpit` plugin i
 
 The mod runs inside Claude Code and writes the file count and the terminal width to `~/.claude/cockpit/<session id>.json`, one small file per session, so two open sessions never mix their numbers. The status line is a separate Node process that reads its session's file, plus `settings.json` for your options. Both draw from `palettes.js`: the status line its colours, the Files pane its ground (`base`), with your terminal's own foreground on it.
 
+## What the mod does on your machine
+
+Everything the mod in `hooks/register.tsx` reads, writes and runs. It makes no network requests and sends nothing anywhere; a link opens in your browser only when you pick it.
+
+- **Writes one file:** `~/.claude/cockpit/<session id>.json` (under `CLAUDE_CONFIG_DIR` if you set one), holding `{ "files": <count>, "columns": <terminal width> }`. The status line script reads it to draw the count and to fit the row; the width comes from a hook on the row above the prompt (`AbovePrompt`), which measures it and draws nothing of its own. The path includes the session id, so it cannot be written as fixed text. Nothing else is written by the mod; `setup.mjs`, which you run yourself, edits `settings.json` and `keybindings.json` as listed under [Install](#install).
+- **Reads four environment variables, all paths or the OS name, never a token or key:** `CLAUDE_CONFIG_DIR`, `USERPROFILE` and `HOME` to find the config folder for that file, and `OS` to tell Windows apart when opening something.
+- **Reads this session's conversation, and changes none of it:** the hooks on Claude's replies as they stream (`classic.MessageDisplay`) and on tool calls (`tool.call`, including `Write` and `Edit`) look for the files, links and folders to list, and pass every reply and call on unchanged. After a session switch the list is rebuilt from the same session's transcript. The list lives in the session's own state; nothing from the conversation leaves Claude Code.
+- **Runs programs only to open what you pick, plus one check:**
+  - opening a row (Enter, its digit, or `o` for its folder) runs your system's opener with that file, folder or link: on Windows `cmd /c start "" <path>` for a file or folder and `rundll32 url.dll,FileProtocolHandler <url>` for a link, on macOS `open <target>`, on Linux `xdg-open <target>`. The target is built from the row, which is why the command cannot be written as fixed text.
+  - before that, on macOS and Linux only, `uname` once, to tell macOS (`open`) from Linux (`xdg-open`).
+- **Adds one command:** `/files`, which opens the pane. The pane's own keys work only while it is open.
+
 ## Check it
 
 ```

@@ -28,7 +28,7 @@ Buyer-ready threshold: 42 / 50 with no category below 3. Re-score after any sign
 | # | Category | Score | Why |
 |---|---|---|---|
 | 1 | Onboarding documentation | 4 | README covers install, palettes and how it works; a setup script wires everything. No first-change walkthrough. |
-| 2 | Inline code documentation | 4 | Every module opens with its purpose; the non-obvious choices (Windows path escaping, why `$.env`, the drop order) carry their reason. |
+| 2 | Inline code documentation | 4 | Every module opens with its purpose; the non-obvious choices (Windows path escaping, why the engine's env call and not `process.env`, the drop order) carry their reason. |
 | 3 | Test coverage of critical paths | 5 | Palettes, the status line (width, palettes, glyphs, bad input, per-session status), setup (pure plan + real runs), the extractors (`pathsIn`, `linksIn`, `foldersIn`, `fuzzy`) and the pane (drawing, collection by kind, counts, the dialog's rows, presses on rows and on `o`, the opener's commands, wrap-around, the filter field's input and Enter) are covered, gated by CI on Linux, macOS and Windows plus the plugin tests on the pinned engine. The one path the harness cannot raise is the person's Esc (`ui.close`); it is on the manual check list. |
 | 4 | Type safety | 5 | `tsc --noEmit` clean (2026-10-04) against the engine's laid types; no `any` outside the test helpers' `on` parameter. `palettes.js` carries a `.d.ts`. |
 | 5 | Architectural consistency | 4 | One pattern per concern: the mod owns engine state, the status line reads one JSON file, both share one palette table. |

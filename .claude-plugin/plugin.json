@@ -1,26 +1,26 @@
 {
   "name": "cockpit",
   "version": "0.2.7",
-  "description": "A denser Claude Code status line and a pane of the files, links and folders this session produced, with a fuzzy filter and a palette picker.",
-  "author": { "name": "Julian Hansen" },
+  "description": "A denser Claude Code status line and a pane of the files, links and folders this session produced, with a fuzzy filter and four palettes.",
+  "author": {
+    "name": "Julian Hansen"
+  },
   "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {
     "palette": {
       "type": "string",
       "title": "Palette",
-      "description": "Colors for the status line and the files pane. \"ansi\" uses your terminal's own 16 colors and works without truecolor.",
+      "description": "Colors for the status line and the files pane: rose-pine, catppuccin-mocha, tokyo-night or ansi. \"ansi\" uses your terminal's own 16 colors and works without truecolor. Anything else falls back to rose-pine.",
       "required": false,
-      "default": "rose-pine",
-      "options": ["rose-pine", "catppuccin-mocha", "tokyo-night", "ansi"]
+      "default": "rose-pine"
     },
     "glyphs": {
       "type": "string",
       "title": "Glyphs",
-      "description": "\"nerd\" draws the file and clock icons from a Nerd Font; \"plain\" uses words, for terminals without one.",
+      "description": "\"nerd\" draws the file and clock icons from a Nerd Font; \"plain\" uses words, for terminals without one. Anything else falls back to nerd.",
       "required": false,
-      "default": "nerd",
-      "options": ["nerd", "plain"]
+      "default": "nerd"
     },
     "openWords": {
       "type": "string",
