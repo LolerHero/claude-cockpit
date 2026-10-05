@@ -75,7 +75,7 @@ const publish = async ($: EngineInterface) => {
     if (!dir || !/^[\w-]+$/.test(id)) return
     // Counts what is still on disk, and drops the rest from the list, so a deleted file leaves
     // the count and the pane together. At most KEEP exists checks. Links are taken as given.
-    // The count is files only: links and folders are not "files this session made".
+    // The count is every row: a link or folder behind a 0 in the bar is one no one opens.
     const docs = await stored($)
     const gone = new Set<string>()
     for (const e of docs) {
@@ -83,7 +83,7 @@ const publish = async ($: EngineInterface) => {
       if (!(await $.fs.exists(e.target).catch(() => false))) gone.add(e.target)
     }
     if (gone.size) await update($, files, list => list.map(asEntry).filter(e => !gone.has(e.target)))
-    const fileCount = docs.filter(e => e.kind === 'file' && !gone.has(e.target)).length
+    const fileCount = docs.filter(e => !gone.has(e.target)).length
     await $.fs.write(`${dir}/cockpit/${id}.json`, JSON.stringify({ files: fileCount, columns }))
   } catch {
     // the status line falls back to its own width sources and omits the count
@@ -140,6 +140,9 @@ const label = (path: string) => path.split('/').pop()?.slice(0, 40) ?? 'file'
 // One file, one spelling: Windows answers `e:\` from one call and `E:\` from another, and the
 // list took them for two files.
 const sameDrive = (path: string) => path.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`)
+// What makes two spellings one file: a drive-letter path is Windows, where case and separator do not
+// count (`E:\work\Prep.md` is `e:/work/prep.md`). Elsewhere case counts. Links compare as written.
+const keyOf = (target: string) => (/^[A-Za-z]:/.test(target) ? target.replace(/\\/g, '/').toLowerCase() : target)
 // The folder a file sits in, for telling two files of one name apart.
 const folderOf = (path: string) => path.split('/').slice(-2, -1)[0] ?? ''
 const hostOf = (url: string) => url.replace(/^https?:\/\//, '').split(/[/?#]/)[0] ?? url
@@ -212,7 +215,7 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
   const out: string[] = []
   if (source === 'reply') {
     for (const raw of text.split('\n')) {
-      const m = /^`?((?:[A-Za-z]:[\\/]|\/)[^\s`]*)`?$/.exec(raw.trim())
+      const m = /^\**`?((?:[A-Za-z]:[\\/]|\/)[^\s`*]*)`?\**$/.exec(raw.trim())
       if (m?.[1]) out.push(norm(m[1]))
     }
     return [...new Set(out)]
@@ -235,8 +238,15 @@ export const foldersIn = (text: string, source: 'command' | 'reply'): string[] =
 
 // An absolute path alone on a reply line: an openable file is a file row, anything else a folder row
 // (collect drops it unless it is a directory). Julian, 2026-10-04: a file Claude lists is one to open.
+// 2026-10-05: so is an openable file in backticks anywhere on a line — that is how a path gets named
+// mid-sentence. Folders and bare prose paths still need a line of their own.
+const TICKED_FILE = new RegExp(String.raw`\x60((?:[A-Za-z]:[\\/]|/)[^\x60\n]*\.(?:${OPENABLE}))\x60`, 'giu')
 export const replyPaths = (text: string, openWords: string[] = []): Found[] =>
-  [...new Set([...foldersIn(text, 'reply'), ...fileLinksIn(text, openWords)])].map(target => ({
+  [...new Set([
+    ...foldersIn(text, 'reply'),
+    ...[...text.matchAll(TICKED_FILE)].map(m => norm(m[1] ?? '')),
+    ...fileLinksIn(text, openWords),
+  ])].map(target => ({
     kind: IS_OPENABLE.test(target) ? 'file' as const : 'folder' as const,
     target,
   }))
@@ -327,6 +337,9 @@ const collect = async ($: EngineInterface, found: Found[], since?: number, roots
     const stat = await $.fs.stat(target).catch(() => null)
     if (f.kind === 'folder' && stat?.kind !== 'dir') continue
     if (f.kind === 'file' && since !== undefined && (!stat || stat.mtimeMs < since - 2000)) continue
+    // One row a file: a rebuild hands every mention over in one batch. The last mention wins the slot.
+    const dup = keep.findIndex(k => keyOf(k.target) === keyOf(target))
+    if (dup >= 0) keep.splice(dup, 1)
     keep.push({ kind: f.kind, target })
   }
   if (keep.length) {
@@ -334,8 +347,8 @@ const collect = async ($: EngineInterface, found: Found[], since?: number, roots
     await update($, files, list => {
       // A target produced again moves to the newest slot: a regenerated file is this session's
       // latest output, and left in its old place a full list drops it on the next new file.
-      const targets = new Set(keep.map(k => k.target))
-      const kept = list.map(asEntry).filter(e => !targets.has(e.target))
+      const targets = new Set(keep.map(k => keyOf(k.target)))
+      const kept = list.map(asEntry).filter(e => !targets.has(keyOf(e.target)))
       const fresh = keep.map(k => ({ ...k, label: labelOf(k.kind, k.target), tail: tailOf(k.kind, k.target), at }))
       return [...kept, ...fresh].slice(-KEEP)
     })
@@ -368,7 +381,7 @@ const rebuild = async ($: EngineInterface, openWords: string[]) => {
       }
       for (const use of m.toolUses ?? []) {
         if (use.isError) continue
-        if (use.tool === 'Write' && typeof use.input?.file_path === 'string') {
+        if ((use.tool === 'Write' || use.tool === 'Edit') && typeof use.input?.file_path === 'string') {
           const path = use.input.file_path.replace(/\\/g, '/')
           if (IS_OPENABLE.test(path)) found.push(file(path))
         } else if (use.tool === 'Artifact') {
@@ -459,6 +472,15 @@ export const register: Register = (on, options) => {
 
   // A Write always names the file it wrote, absolute: taken as is, spaces and all.
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+    const ran = await next(e)
+    const path = e.file_path?.replace(/\\/g, '/')
+    const ok = ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)
+    await collect($, ok ? [{ kind: 'file', target: path }] : [])
+    return ran
+  })
+
+  // An Edit names the file it changed the same way (Julian, 2026-10-05: a doc edited is one to open).
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const ran = await next(e)
     const path = e.file_path?.replace(/\\/g, '/')
     const ok = ran.deny === undefined && ran.isError !== true && path && IS_OPENABLE.test(path)

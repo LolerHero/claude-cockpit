@@ -15,7 +15,7 @@ Opus 5.5 │ Coding │ main* +12 -3 │ ▪▪▪▪▪                  3  · 
 - `main*` is the branch, with `*` when there is uncommitted work, `↑2 ↓1` when it is ahead of or behind its upstream, and `detached` in red when there is no branch.
 - `+12 -3` is the lines added and removed against `HEAD`, shown only when the tree is dirty.
 - `▪▪▪▪▪` is the context window, one square per 20 %. It turns from calm to yellow to red as it fills.
-- `3` (after a file icon) is how many files the pane holds. Files only: the links and folders it also lists are not counted.
+- `3` (after a file icon) is how many rows the Files pane holds: files, links and folders alike.
 - `1h 20m` (after a clock icon) is how long the session has run.
 
 When the terminal is too narrow, segments drop in this order: model, directory, file count, churn, clock, branch, and the context bar last. The row never wraps.
@@ -30,7 +30,7 @@ What counts:
 - **A link** from a tool: an artifact publish, a `gh pr create` / `gh issue create` / `gh release create`, a deploy tool (`mcp__*deploy*`), and a dev server a command started (`localhost`, `127.0.0.1`, a LAN address with a port; `0.0.0.0` is shown as `localhost`). Other URLs in command output (registry notices, docs) are not collected. And from a reply, as it streams: a link alone on its line (bare, a bullet, or `[text](url)`), or on a line that contains one of the open words — `open, öffne, ansehen, view, review` by default, the `openWords` option in the config menu.
 - **A folder** this session made: `mkdir` and `git worktree add` in a command (once it exists), and an absolute path alone on a reply line that is a directory.
 
-A file or folder that vanished drops off the list; a link is never checked. The status-line count stays files only.
+A file or folder that vanished drops off the list; a link is never checked. The status-line count is every row the pane holds.
 
 ## Requirements
 

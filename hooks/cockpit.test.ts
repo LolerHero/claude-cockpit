@@ -210,6 +210,16 @@ test('a Write is collected at its exact path, spaces and all', async ($, on) => 
   expect(await drawPane($)).toContain('▪ report.pdf')
 })
 
+test('an Edit is collected like a Write; source it edits is not', async ($, on) => {
+  disk(on)
+  on('tool.call', async () => ({ result: { content: [] } }))
+  await $.tool.call({ tool: 'Edit', file_path: '/work/interview-prep.md', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/src/app.ts', old_string: 'a', new_string: 'b' })
+  const tree = await drawPane($)
+  expect(tree).toContain('▪ interview-prep.md')
+  expect(tree).not.toContain('app.ts')
+})
+
 test('a file a command only mentions is not collected; one it produced is', async ($, on) => {
   // `git status` prints README.md, which exists but was not touched: it is not this session's.
   disk(on, { 'README.md': 0 })
@@ -306,6 +316,7 @@ test('an empty list is rebuilt from the transcript, Bash left out', async ($, on
           { tool_use_id: 'c', tool: 'Write', input: { file_path: 'E:/work/c.pdf' }, isError: true, text: 'denied' },
           { tool_use_id: 'd', tool: 'Bash', input: { command: 'git status' }, text: ' M README.md' },
           { tool_use_id: 'e', tool: 'mcp__playwright__browser_take_screenshot', input: {}, text: 'saved to E:/work/shot.png' },
+          { tool_use_id: 'f', tool: 'Edit', input: { file_path: 'E:/work/edited.md' }, text: 'ok' },
         ],
       },
     ],
@@ -317,6 +328,7 @@ test('an empty list is rebuilt from the transcript, Bash left out', async ($, on
   const tree = await drawPane($)
   expect(tree).toContain('▪ a.md')
   expect(tree).toContain('▪ shot.png')
+  expect(tree).toContain('▪ edited.md')
   expect(tree).not.toContain('b.ts') // source, never listed
   expect(tree).not.toContain('c.pdf') // the Write failed
   expect(tree).not.toContain('README.md') // Bash: not replayed
@@ -331,6 +343,25 @@ test('a drive letter in either case is one file, not two', async ($, on) => {
   await $.tool.call({ tool: 'Write', file_path: 'e:/work/design/button.md', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: 'E:/work/design/button.md', content: 'y' })
   expect((await drawPane($)).match(/▪ button\.md/g)?.length).toBe(1)
+})
+
+// Julian, 2026-10-05: one file named in two replies and edited once showed up as three rows. A rebuild
+// hands collect every mention in one batch, and Windows paths differ in case and separator only.
+test('one file named in replies, edited and rebuilt in one batch is one row', async ($, on) => {
+  on('session.messages', async () => ({
+    value: [
+      { role: 'assistant', text: 'Your prep: `E:\\work\\prep.md`.', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '**`E:/work/prep.md`**\nthe path is `e:/Work/Prep.md`',
+        toolUses: [{ tool_use_id: 'a', tool: 'Edit', input: { file_path: 'E:\\work\\prep.md' }, text: 'ok' }],
+      },
+    ],
+  }))
+  disk(on)
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  await $.command.run({ command: 'files', args: '', origin: { kind: 'plugin', name: 'test' }, presentation: { isFullscreen: true, columns: 144 } })
+  expect((await drawPane($)).match(/▪ prep\.md/gi)?.length).toBe(1)
 })
 
 test('two files with the same name each show their folder', async ($, on) => {
@@ -589,13 +620,15 @@ test('a target produced again moves to the newest slot, mixed kinds', async ($, 
   expect(list().map(e => `${e.kind}:${e.label}`)).toEqual(['file:a.md', 'file:b.md', 'link:claude.ai/artifact/a1'])
 })
 
-test('the status file counts files only, never links or folders', async ($, on) => {
+// Julian, 2026-10-05: a link alone in the pane behind a 0 in the bar is a link no one opens. The
+// count is every row the pane holds.
+test('the status file counts every row: files, links and folders', async ($, on) => {
   const writes: string[] = []
   disk(on, {}, [], writes)
   on('tool.call', async () => ({ result: { content: [{ type: 'text', text: 'Published: https://claude.ai/artifact/a1' }] } }))
   await $.tool.call({ tool: 'Write', file_path: '/work/a.md', content: 'x' })
   await $.tool.call({ tool: 'Artifact', file_path: '/x.html' })
-  expect(JSON.parse(writes[writes.length - 1] ?? '{}').files).toBe(1)
+  expect(JSON.parse(writes[writes.length - 1] ?? '{}').files).toBe(2)
 })
 
 // ─── linksIn ─────────────────────────────────────────────────────────────────────────────────
@@ -661,6 +694,21 @@ test('replyPaths: a file:// link counts like a web link — alone, bulleted, mar
     'folder:E:/Coding/tmp',
     'file:/home/me/My Report.pdf',
     'file:E:/Coding/tmp/note-02.md',
+  ])
+})
+
+// Julian, 2026-10-05: a file Claude lists is one to open, wherever the line puts it. A backticked
+// path is one someone named; bold around a path alone on its line does not hide it.
+test('replyPaths: a backticked absolute file path anywhere on a line, and a bold one alone, are files', () => {
+  const reply = [
+    'Your prep is already here: `E:\\Coding\\apps\\classix\\interview-prep.md`. Below is the short version.',
+    '**`E:\\Coding\\apps\\classix\\notes.md`**',
+    'source sits in `E:/Coding/src/app.ts` and a folder in `E:/Coding/apps`',
+    'not backticked: E:/Coding/apps/plain.md in prose',
+  ].join('\n')
+  expect(replyPaths(reply).map(f => `${f.kind}:${f.target}`).sort()).toEqual([
+    'file:E:/Coding/apps/classix/interview-prep.md',
+    'file:E:/Coding/apps/classix/notes.md',
   ])
 })
 
