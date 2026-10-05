@@ -2,7 +2,7 @@
 
 A denser Claude Code status line and a pane of the files, links and folders your session produced, with a fuzzy filter.
 
-![The Files pane docked beside a Claude Code session in WezTerm on Windows, listing a folder, two files and a link the session produced](docs/screenshots/files-pane.png)
+![A Claude Code session in WezTerm on Windows: Claude writes two files, a folder and a link, the status-line count climbs to 6, then /files opens the pane, j and k walk the rows, and f with "lau" filters to launch-plan.md](docs/screenshots/demo.gif)
 
 ## What you get
 
