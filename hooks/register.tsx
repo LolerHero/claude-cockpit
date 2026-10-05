@@ -657,7 +657,10 @@ export const register: Register = (on, options) => {
           key="q"
           label="find"
           value={query}
-          placeholder="type to filter · Enter opens the top match · Esc back"
+          // Short: the hint row says the keys. A long placeholder pushed the Enter label onto a row
+          // of its own, and the engine's default label `submit` named nothing this field does.
+          placeholder="type to filter"
+          submitLabel="open"
           autoFocus
           onInput={(value: string) => {
             query = value
@@ -770,13 +773,17 @@ export const register: Register = (on, options) => {
             <Button key={NAV.o} plain dimColor hotkey="o" onPress={folderOfRow}>
               folder
             </Button>,
-            ...(filtering
-              ? []
-              : [
-                  <Button key={NAV.f} plain dimColor hotkey="f" onPress={startFilter}>
-                    find
-                  </Button>,
-                ]),
+            // While filtering, f is the way back from the matches to the field, text kept (Julian
+            // 2026-10-05: only Shift+Tab came back, and a missing f fell through to the prompt).
+            <Button
+              key={NAV.f}
+              plain
+              dimColor
+              hotkey="f"
+              onPress={filtering ? () => void $.ui.focus({ requestId: PANE, key: 'q' }).catch(() => null) : startFilter}
+            >
+              {filtering ? 'field' : 'find'}
+            </Button>,
           ]
           return hintRows === HINT_ROWS ? (
             <>
@@ -786,7 +793,7 @@ export const register: Register = (on, options) => {
               <Box flexDirection="row" columnGap={1}>
                 {acts}
                 <Text wrap="truncate-end">
-                  {filtering ? '· Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
+                  {filtering ? '· Tab: matches · Enter opens the top match · Esc back' : '· Enter or 1–8 opens · Esc closes'}
                 </Text>
               </Box>
             </>
@@ -794,6 +801,8 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" columnGap={1}>
               {acts}
               {walk}
+              {/* Short, and cut at the edge rather than wrapped: this row has no second line to spill into. */}
+              <Text wrap="truncate-end">{filtering ? '· Tab: matches · Esc back' : '· Enter opens · Esc closes'}</Text>
             </Box>
           )
         })()}

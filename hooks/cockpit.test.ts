@@ -393,11 +393,11 @@ const mountInline = ($: any, bodyRows: number) =>
 test('inline with few rows, a page is as long as the rows granted, the hint still drawn', async ($, on) => {
   await writeMany($, on, 20)
   const tree = JSON.stringify(await (await mountInline($, 5)).drawn())
-  // Tight: one hint row of keys (o, f, then the walk), no prose, so 4 of the 5 rows are entries.
+  // Tight: one hint row (o, f, the walk, then a short text cut at the edge), so 4 of the 5 rows are entries.
   expect(labels(tree)).toEqual(['f20', 'f19', 'f18', 'f17'])
   expect(tree).toContain('1–4 of 20 · 1/5')
   for (const k of ['nav:o', 'nav:f', 'nav:j', 'nav:k', 'nav:h', 'nav:l']) expect(tree).toContain(k)
-  expect(tree).not.toContain('Esc closes')
+  expect(tree).toContain('· Enter opens · Esc closes')
 })
 
 test('inline, the image preview is left out before any row is', async ($, on) => {
@@ -993,7 +993,7 @@ test('no match says so; Enter on no match opens nothing', async ($, on) => {
   expect(ran).toEqual([])
 })
 
-test('while filtering, the hint says Esc goes back to the list and the f key is gone', async ($, on) => {
+test('while filtering, the hint names Tab to the matches and f back to the field, and Esc back', async ($, on) => {
   // The engine raises `ui.close` for the person's Esc (closeOnEscape); the module's hook answers
   // for it while filtering, without `next`, and the pane stays. The test `$.ui` on 2.1.289 has
   // no `close` (measured: render, scroll, focus, press, input, select, mount), so that path is
@@ -1005,7 +1005,9 @@ test('while filtering, the hint says Esc goes back to the list and the f key is 
   await pane.press({ key: 'nav:f' })
   const drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('Esc back')
-  expect(drawn).not.toContain('"hotkey":"f"')
+  expect(drawn).toContain('Tab: matches')
+  expect(drawn).toContain('"hotkey":"f"') // f returns from the matches to the field
+  expect(drawn).toContain('"submitLabel":"open"') // Enter opens; not the engine default `submit`
   expect(drawn).toContain('▪ a.md') // an empty query is the whole list
 })
 
