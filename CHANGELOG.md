@@ -3,6 +3,17 @@
 Each release names the Claude Code build it was tested against: the plugin hooks API is young,
 so pin the tag that matches your build (`git clone --branch v0.1.0 …`).
 
+## v0.2.8 — 2026-10-09
+
+Tested against Claude Code 2.1.295.
+
+- Text, JSON and log files (`.txt`, `.json`, `.log`) are listed in the Files pane.
+- A path Git Bash prints on Windows (`/c/Users/…`) is read as `C:/Users/…`. Before, a file a command
+  named that way never reached the list.
+- New `~/.claude/cockpit/ignore`, written once on first start with the usual configuration files
+  (`package.json`, `tsconfig.json`, `requirements.txt`, `*.log` …) all commented out. Uncomment a
+  line or add your own pattern to keep a file off the list; edits apply within 30 seconds.
+
 ## v0.2.7 — 2026-10-05
 
 Tested against Claude Code 2.1.289.

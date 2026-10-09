@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { pathsIn, tailOf, linksIn, foldersIn, replyPaths, fuzzy, fuzzyScore, HINT_ROWS, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
+import { pathsIn, tailOf, linksIn, foldersIn, replyPaths, fuzzy, fuzzyScore, ignoreMatcher, IGNORE_TEMPLATE, HINT_ROWS, IMAGE_ROWS, KEEP, PER_PAGE } from './register.tsx'
 import { paletteOf, PALETTES } from '../palettes.js'
 
 // The test `$` carries no `$.session.cwd()` on 2.1.288 (measured: "not a function"), so the
@@ -35,8 +35,14 @@ test('a relative path is resolved against the session directory', () => {
 test('documents and generated artefacts are collected, source files are not', () => {
   const docs = { content: [{ type: 'text', text: 'wrote /out/report.pdf and /out/notes.md' }] }
   expect(pathsIn(docs)).toEqual(['/out/report.pdf', '/out/notes.md'])
-  const src = { content: [{ type: 'text', text: 'edited src/page.tsx and lib/x.py and a.json' }] }
+  const src = { content: [{ type: 'text', text: 'edited src/page.tsx and lib/x.py and run.ps1' }] }
   expect(pathsIn(src)).toEqual([])
+})
+
+// Julian, 2026-10-09: text, data and log files are ones to open too.
+test('txt, json and log files are collected', () => {
+  const out = { content: [{ type: 'text', text: '43 /c/Users/me/.restic/password.txt\nwrote /out/data.json and /out/backup.log' }] }
+  expect(pathsIn(out)).toEqual(['/c/Users/me/.restic/password.txt', '/out/data.json', '/out/backup.log'])
 })
 
 test('a result that names no file yields nothing', () => {
@@ -734,6 +740,78 @@ test('a dev server and a file from one Bash call are two entries of two kinds', 
   }))
   await $.tool.call({ tool: 'Bash', command: 'npm run build && npm run dev' })
   expect(list().map(e => `${e.kind}:${e.label}:${e.tail}`)).toEqual(['file:report.pdf:work', 'link:localhost:3030:localhost:3030'])
+})
+
+// ─── the ignore file ─────────────────────────────────────────────────────────────────────────
+
+test('ignoreMatcher: a name matches in any folder, a path matches its end, case does not count', () => {
+  const ignore = ignoreMatcher('# comment\n\npackage.json\ntsconfig.*.json\n.vscode/*.json\n*.LOG\n')
+  expect(ignore('E:/Coding/app/package.json')).toBe(true)
+  expect(ignore('E:\\Coding\\app\\tsconfig.build.json')).toBe(true)
+  expect(ignore('/work/.vscode/settings.json')).toBe(true)
+  expect(ignore('/work/settings.json')).toBe(false)
+  expect(ignore('C:/Users/me/.restic/backup.log')).toBe(true)
+  expect(ignore('/out/report.json')).toBe(false)
+  expect(ignore('/out/package.json.md')).toBe(false)
+})
+
+test('the shipped template leaves nothing out, and no file at all leaves nothing out', () => {
+  expect(IGNORE_TEMPLATE.split('\n').every(l => !l.trim() || l.startsWith('#'))).toBe(true)
+  expect(ignoreMatcher(IGNORE_TEMPLATE)('/work/package.json')).toBe(false)
+  expect(ignoreMatcher(undefined)('/work/package.json')).toBe(false)
+  // every example still parses once uncommented
+  const all = IGNORE_TEMPLATE.split('\n').filter(l => /^# \S+$/.test(l) && /[.*]/.test(l)).map(l => l.slice(2)).join('\n')
+  expect(ignoreMatcher(all)('/work/package.json')).toBe(true)
+})
+
+test('session start writes the template once, under the config dir', async ($, on) => {
+  const written: { path: string; text: string }[] = []
+  on('session.start', async () => ({ cwd: CWD }))
+  on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  on('session.id', async () => ({ value: 'sess-a' }))
+  on('env.get', async ($, e) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('fs.exists', async ($, e) => ({ value: !e.path.replace(/\\/g, '/').endsWith('/cockpit/ignore') }))
+  on('fs.read', async () => ({ value: '' }))
+  on('fs.write', async ($, e) => {
+    written.push({ path: e.path.replace(/\\/g, '/'), text: e.text })
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(written.filter(w => w.path.endsWith('/cfg/cockpit/ignore')).map(w => w.text)).toEqual([IGNORE_TEMPLATE])
+})
+
+test('a file the ignore file names is left out; one it does not name is kept', async ($, on) => {
+  // Not `disk()`: it answers every `fs.read` with a PNG, and a hook may be registered once.
+  const list = watchState(on)
+  const ignoreText = { value: 'package.json\n' }
+  on('env.get', async ($, e) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+  on('session.id', async () => ({ value: 'sess-a' }))
+  on('session.cwd', async () => ({ value: CWD }))
+  on('session.root', async () => ({ value: CWD }))
+  on('clock.now', async () => ({ value: 1_000_000 }))
+  on('fs.exists', async () => ({ value: true }))
+  on('fs.write', async () => ({ value: undefined }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 10, mtimeMs: 1_000_000, isLink: false } }))
+  on('fs.read', async () => ignoreText)
+  on('session.start', async () => ({ cwd: CWD }))
+  on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  on('tool.call', async () => ({ result: {} }))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Write', file_path: '/work/package.json', content: '{}' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/report.json', content: '{}' })
+  expect(list().map(e => e.target)).toEqual(['/work/report.json'])
+  // the module keeps its matcher: an empty file resets it for the tests after this one
+  ignoreText.value = ''
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+})
+
+// Git Bash prints `/c/Users/…`; only the drive spelling exists on Windows (measured 2026-10-09).
+test('a Git Bash /c/ path is resolved to its drive letter', async ($, on) => {
+  disk(on, {}, [], [], p => p.startsWith('C:/'))
+  const list = watchState(on)
+  on('tool.call', async () => ({ result: { stdout: '43 /c/Users/me/.restic/password.txt\n', stderr: '' } }))
+  await $.tool.call({ tool: 'Bash', command: 'wc -c /c/Users/me/.restic/password.txt' })
+  expect(list().map(e => `${e.kind}:${e.target}`)).toEqual(['file:C:/Users/me/.restic/password.txt'])
 })
 
 test('gh pr create output yields its URL; a plain Bash with a docs URL yields nothing', async ($, on) => {

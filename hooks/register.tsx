@@ -76,11 +76,12 @@ const publish = async ($: EngineInterface) => {
     // Counts what is still on disk, and drops the rest from the list, so a deleted file leaves
     // the count and the pane together. At most KEEP exists checks. Links are taken as given.
     // The count is every row: a link or folder behind a 0 in the bar is one no one opens.
+    // A file the ignore file has since named goes the same way.
     const docs = await stored($)
     const gone = new Set<string>()
     for (const e of docs) {
       if (e.kind === 'link') continue
-      if (!(await $.fs.exists(e.target).catch(() => false))) gone.add(e.target)
+      if ((e.kind === 'file' && ignored(e.target)) || !(await $.fs.exists(e.target).catch(() => false))) gone.add(e.target)
     }
     if (gone.size) await update($, files, list => list.map(asEntry).filter(e => !gone.has(e.target)))
     const fileCount = docs.filter(e => !gone.has(e.target)).length
@@ -92,9 +93,89 @@ const publish = async ($: EngineInterface) => {
 
 // ─── what this session made ──────────────────────────────────────────────────────────────────
 
-// Things a person opens, not things a person greps. Deliberately NOT .ts/.py/.json — source
-// belongs in the editor, and listing it buries the one file they wanted among forty imports.
-const OPENABLE = 'png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip'
+// Things a person opens, not things a person greps. Deliberately NOT .ts/.py — source belongs in
+// the editor, and listing it buries the one file they wanted among forty imports. txt/json/log
+// joined 2026-10-09 (Julian): a password file, a data export and a backup log are ones to open;
+// the config files that come with .json are the ignore file's to leave out, not the list's.
+const OPENABLE = 'png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip|txt|json|log'
+
+// ─── the ignore file ─────────────────────────────────────────────────────────────────────────
+
+// <config dir>/cockpit/ignore, written once with every line commented out: nothing is left out
+// until the person says so. Read at session start and on the 30 s clock, so an edit takes effect
+// without a restart.
+export const IGNORE_TEMPLATE = `# cockpit: files the Files pane leaves out.
+#
+# One pattern a line; "#" starts a comment. A pattern without "/" matches the file name in any
+# folder; one with "/" matches the end of the full path (write "/" on Windows too). "*" is any
+# run of characters within one folder, "?" one character. Case does not count.
+# Uncomment a line to leave that file out, or add your own.
+
+# Package and build configuration
+# package.json
+# package-lock.json
+# tsconfig.json
+# tsconfig.*.json
+# jsconfig.json
+# composer.json
+# deno.json
+# biome.json
+# turbo.json
+# vercel.json
+# components.json
+# .eslintrc.json
+# .prettierrc.json
+# appsettings*.json
+# .vscode/*.json
+
+# Python and other text manifests
+# requirements*.txt
+# robots.txt
+# LICENSE.txt
+# CMakeLists.txt
+
+# Logs
+# npm-debug.log*
+# yarn-error.log
+# *.log
+`
+
+const globPart = (glob: string) =>
+  glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')
+
+// The patterns of an ignore file as one test over a forward-slash path. Not text (a missing or
+// unreadable file): nothing is left out.
+export const ignoreMatcher = (text: unknown): ((path: string) => boolean) => {
+  if (typeof text !== 'string') return () => false
+  const tests = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .map(p => p.replace(/\\/g, '/').replace(/^\/+/, ''))
+    .map(p => ({ onPath: p.includes('/'), re: new RegExp(p.includes('/') ? `(?:^|/)${globPart(p)}$` : `^${globPart(p)}$`, 'i') }))
+  if (!tests.length) return () => false
+  return path => {
+    const full = path.replace(/\\/g, '/')
+    const name = full.split('/').pop() ?? full
+    return tests.some(t => t.re.test(t.onPath ? full : name))
+  }
+}
+
+let ignored: (path: string) => boolean = () => false
+
+// Writes the template when there is none, then reads it. Never rejects: a failed read leaves the
+// last matcher in place.
+const loadIgnore = async ($: EngineInterface) => {
+  try {
+    const dir = await configDir($)
+    if (!dir) return
+    const path = `${dir}/cockpit/ignore`
+    if (!(await $.fs.exists(path).catch(() => false))) await $.fs.write(path, IGNORE_TEMPLATE)
+    ignored = ignoreMatcher(await $.fs.read(path))
+  } catch {
+    // keep the matcher there was
+  }
+}
 
 // Absolute OR relative: Playwright answers `./shot.png`, and an absolute-only pattern silently
 // found nothing. The separator classes take a RUN, because JSON.stringify escapes a Windows path
@@ -128,9 +209,14 @@ export const pathsIn = (value: unknown, cwd?: string): string[] => {
 
 // A relative path is tried under each root in turn, first that exists wins: the project root
 // first (Playwright MCP saves relative to it), then the cwd (a shell `cd` moves only that one).
+// Git Bash on Windows prints `/c/Users/…` for `C:\Users\…`; the engine reads that as a folder `c` on
+// the current drive, so the drive spelling is tried after the path as written (measured 2026-10-09:
+// `wc -c` named `/c/Users/bloed/.restic/password.txt` and the row never appeared).
+const msysDrive = (path: string) => /^\/([A-Za-z])\//.exec(path) ? `${path[1]!.toUpperCase()}:${path.slice(2)}` : null
 const resolve = async ($: EngineInterface, path: string, roots: string[]) => {
+  const drive = msysDrive(path)
   const tries = isAbsolute(path) || !roots.length
-    ? [path]
+    ? [path, ...(drive ? [drive] : [])]
     : roots.map(root => `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${path}`)
   for (const full of tries) if (await $.fs.exists(full).catch(() => false)) return full
   return null
@@ -334,6 +420,7 @@ const collect = async ($: EngineInterface, found: Found[], since?: number, roots
     const resolved = await resolve($, f.target, roots)
     if (!resolved) continue
     const target = sameDrive(resolved)
+    if (f.kind === 'file' && ignored(target)) continue
     const stat = await $.fs.stat(target).catch(() => null)
     if (f.kind === 'folder' && stat?.kind !== 'dir') continue
     if (f.kind === 'file' && since !== undefined && (!stat || stat.mtimeMs < since - 2000)) continue
@@ -458,10 +545,12 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'files', description: 'Open a file, link or folder this session produced' })
+    await loadIgnore($) // before the rebuild, so an ignored file never reaches the list
     await rebuild($, openWords) // a resumed or re-identified conversation: the count is right before /files
     await publish($)
     // A file deleted outside Claude (Explorer, another shell) fires no hook: recount on a clock.
-    $.clock.every(30_000, () => void publish($))
+    // The ignore file is re-read on the same clock, so an edit to it lands within 30 s.
+    $.clock.every(30_000, () => void loadIgnore($).then(() => publish($)))
     return started
   })
 
