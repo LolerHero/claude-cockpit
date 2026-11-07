@@ -3,6 +3,7 @@
 A denser Claude Code status line and a pane of the files, links and folders your session produced, with a fuzzy filter.
 
 This repo can be built from Telegram.
+Continued builds work.
 
 ![A Claude Code session in WezTerm on Windows: Claude writes two files, a folder and a link and the status-line count climbs; ctrl+x f opens the pane, j and k walk the rows, and the find field filters with Tab into the matches and f back to the field](docs/screenshots/demo.gif)
 
